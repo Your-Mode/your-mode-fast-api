@@ -1,16 +1,9 @@
 from fastapi import APIRouter
 
-from app.schemas.assistant import MessageResponse, MessageRequest, DiagnoseResponse, DiagnoseRequest
-from app.services.assistant_service import send_message_to_assistant, diagnose_assistant_with_tool
+from app.schemas.assistant import DiagnoseResponse, DiagnoseRequest
+from app.services.assistant_service import diagnose_assistant_with_tool
 
 router = APIRouter()
-
-
-@router.post("/message", response_model=MessageResponse)
-def chat_with_assistant(request: MessageRequest):
-    response = send_message_to_assistant(request.user_input)
-    return MessageResponse(assistant_response=response)
-
 
 """
 사용자의 신체 정보를 바탕으로 OpenAI Assistant + LangChain Tool을 통해
