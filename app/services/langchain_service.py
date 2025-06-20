@@ -1,14 +1,13 @@
 import os
-import json
 from dotenv import load_dotenv
 import openai as oai
 
+from langchain.chains.llm import LLMChain
 from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 
 load_dotenv()
 
-# OpenAI 클라이언트 & LLM 설정
 oai_client = oai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 llm = ChatOpenAI(
     openai_api_key=os.getenv("OPENAI_API_KEY"),
@@ -17,7 +16,7 @@ llm = ChatOpenAI(
     model_kwargs={"top_p": 0.95, "max_tokens": 1024}
 )
 
-# 1) 체형 진단 프롬프트 & 체인
+
 diagnosis_prompt = PromptTemplate(
     input_variables=["answers", "gender", "height", "weight"],
     template="""
@@ -36,7 +35,6 @@ diagnosis_prompt = PromptTemplate(
 이유: 균형 잡힌 체형으로 인해...
 """
 )
-diagnosis_chain = diagnosis_prompt | llm
 
 # 2) 섹션별 프롬프트 정의
 section_prompts = {
@@ -90,42 +88,35 @@ section_prompts = {
 """
     ),
 }
-# Prompt→LLM 체인 생성
-section_chains = {key: prompt | llm for key, prompt in section_prompts.items()}
 
+diagnosis_chain = LLMChain(llm=llm, prompt=diagnosis_prompt)
+section_chains   = { k: LLMChain(llm=llm, prompt=pt) for k,pt in section_prompts.items() }
 
 def run_body_diagnosis(
-    answers: list[str],
-    height: float,
-    weight: float,
-    gender: str
+        answers: list[str],
+        height: float,
+        weight: float,
+        gender: str
 ) -> dict:
-    # 설문 문자열화
-    answers_text = "\n".join(f"{i+1}. {a}" for i, a in enumerate(answers))
+    answers_text = "\n".join(f"{i + 1}. {a}" for i, a in enumerate(answers))
 
-    # 1) 체형 진단 호출 및 방어적 파싱
-    diag_raw = diagnosis_chain.invoke({
-        "answers": answers_text,
-        "gender":  gender,
-        "height":  height,
-        "weight":  weight
-    })
-    diag_text = diag_raw.get("text") if isinstance(diag_raw, dict) else str(diag_raw)
-    lines = diag_text.strip().split("\n", 1)
-    if len(lines) < 2:
-        # 라벨 기준 파싱 시도
-        body_type = diag_text.split("체형:", 1)[-1].strip() if "체형:" in diag_text else diag_text.strip()
-        type_desc = ""
+    diag_text: str = diagnosis_chain.predict(
+        answers=answers_text,
+        gender=gender,
+        height=height,
+        weight=weight,
+    ).strip()
+
+    if "\n" in diag_text:
+        header, reason_line = diag_text.split("\n", 1)
+        body_type = header.split(":", 1)[1].strip()
+        type_desc = reason_line.split(":", 1)[1].strip()
     else:
-        header, reason_line = lines
-        body_type = header.split(':', 1)[1].strip() if ':' in header else header.strip()
-        type_desc = reason_line.split(':', 1)[1].strip() if ':' in reason_line else reason_line.strip()
+        body_type = diag_text.split("체형:", 1)[-1].strip()
+        type_desc = ""
 
-    # 2) 섹션별 내용 생성
     result = {"body_type": body_type, "type_description": type_desc}
-    for key, chain in section_chains.items():
-        sec_raw = chain.invoke({"body_type": body_type})
-        sec_text = sec_raw.get("text") if isinstance(sec_raw, dict) else str(sec_raw)
-        result[key] = sec_text.strip()
 
+    for key, chain in section_chains.items():
+        result[key] = chain.predict(body_type=body_type).strip()
     return result
