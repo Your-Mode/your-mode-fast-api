@@ -1,35 +1,27 @@
-# 1) AWS Lambda Python 3.12 런타임 기반 (Amazon Linux x86_64)
-FROM public.ecr.aws/lambda/python:3.12 AS base
-
-# 2) 레이어 전용 스테이지
-FROM base AS layer-builder
-RUN microdnf install -y zip findutils
+FROM public.ecr.aws/lambda/python:3.12 AS builder
+RUN microdnf install -y zip findutils && \
+    pip install --upgrade pip
 
 WORKDIR /layer
 COPY requirements.txt .
+# 바이너리 wheel 강제 설치 및 불필요 파일 제거
+RUN pip install --no-cache-dir \
+        --only-binary=:all: \
+        -r requirements.txt \
+        --target python && \
+    find python -type d -name "tests" -exec rm -rf {} + && \
+    find python -type d -name "__pycache__" -exec rm -rf {} + && \
+    zip -9 -r /layer.zip python
 
-# 최상위 의존성만 설치 → pip이 알아서 pydantic / pydantic-core 호환 조합 설치
-RUN pip install --upgrade pip \
- && pip install --no-cache-dir -r requirements.txt --target python \
- \
- # 불필요 파일 제거
- && find python -type d -name "tests"       -exec rm -rf {} + \
- && find python -type d -name "__pycache__" -exec rm -rf {} + \
- && rm -rf python/*.dist-info \
- \
- # 레이어 압축
- && zip -9 -r /layer.zip python
-
-# 3) 함수 코드 전용 스테이지
-FROM base AS func-builder
-RUN microdnf install -y zip
-
+FROM public.ecr.aws/lambda/python:3.12 AS final
+RUN microdnf install -y unzip
 WORKDIR /package
+# 1) 앱 코드 복사
 COPY app ./app
-RUN zip -9 -r /function.zip app
+# 2) layer.zip 풀어서 dependencies 병합
+COPY --from=builder /layer.zip .
+RUN unzip layer.zip -d python_layer && \
+    cp -r python_layer/python . && \
+    zip -9 -r function.zip python app
 
-# 4) 산출물 모으기
-FROM scratch AS artifacts
-COPY --from=layer-builder /layer.zip   /layer.zip
-COPY --from=func-builder   /function.zip /function.zip
 CMD ["true"]
