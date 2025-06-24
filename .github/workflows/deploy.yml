@@ -2,19 +2,18 @@ name: Deploy FastAPI to Lambda
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        name: Checkout code
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+      - uses: docker/setup-buildx-action@v2
+        name: Set up Docker Buildx
 
       - name: Build packaging image
         run: docker build -f Dockerfile.build -t fastapi-packager .
@@ -27,8 +26,8 @@ jobs:
           docker rm $CID
           ls -lh layer.zip function.zip
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - uses: aws-actions/configure-aws-credentials@v2
+        name: Configure AWS Credentials
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
