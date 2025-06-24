@@ -90,6 +90,8 @@ jobs:
         run: |
           API_ID=$(aws apigatewayv2 get-apis \
             --query "Items[?Name=='your-mode-http-api'].ApiId" --output text)
+          echo "DEBUG: API_ID is '$API_ID'"
           aws apigatewayv2 create-deployment \
-            --api-id $API_ID \
+            --api-id "$API_ID" \
             --stage-name prod
+      
