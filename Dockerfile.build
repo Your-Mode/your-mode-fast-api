@@ -1,0 +1,21 @@
+cd ~/Documents/your-mode-fast-api
+
+rm -rf package function.zip
+mkdir package
+
+docker run --rm \
+  -v "$(pwd)":/var/task \
+  -w /var/task \
+  --entrypoint /bin/bash \
+  public.ecr.aws/lambda/python:3.12 \
+  -c "\
+    pip install --upgrade pip && \
+    pip install -r requirements.txt --target package/ \
+  "
+
+cp -r app package/app
+
+(cd package && zip -r ../function.zip .)
+
+ls -lh function.zip
+unzip -l function.zip | grep pydantic_core  # C-extension 들어있는지 확인
