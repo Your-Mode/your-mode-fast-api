@@ -1,30 +1,39 @@
 # Dockerfile.build
 
-# 1) 베이스 이미지 (Lambda Python 3.12 on Amazon Linux 2 x86_64)
+# ───────────────────────────────────────────
+# 1) 베이스 이미지 (Lambda Python 3.12 on Amazon Linux 2)
 FROM public.ecr.aws/lambda/python:3.12 AS base
 
+# ───────────────────────────────────────────
 # 2) Layer 빌드 스테이지
 FROM base AS layer-builder
-# 필요 툴(zip)과 pydantic-core 등 C-extension 설치
-RUN yum install -y zip \
+
+# zip 설치, pip 업그레이드, Layer 전용 패키지 설치
+RUN microdnf install -y zip \
  && pip install --upgrade pip \
- && pip install fastapi pydantic openai tiktoken -t /layer/python
+ && pip install pydantic-core fastapi pydantic openai tiktoken --target /layer/python
 
 WORKDIR /layer
 RUN zip -9 -r /layer.zip python
 
+# ───────────────────────────────────────────
 # 3) Function 빌드 스테이지
 FROM base AS func-builder
-# zip 설치 및 Python 의존성 설치
-RUN yum install -y zip \
- && pip install --upgrade pip \
- && pip install -r requirements.txt -t /package
 
-# 애플리케이션 코드 복사
+# zip 설치
+RUN microdnf install -y zip \
+ && pip install --upgrade pip
+
+# requirements.txt를 컨테이너에 복사해야 pip install -r 동작
+COPY requirements.txt /var/task/requirements.txt
+
+# Python 의존성(순수 Python 패키지) 설치
+RUN pip install -r /var/task/requirements.txt --target /package
+
+# 앱 코드 복사
 COPY app /package/app
 
 WORKDIR /package
-# zip 패키징
 RUN zip -9 -r /function.zip .
 
-# artifacts(layer.zip, function.zip)은 `docker cp`로 꺼내갑니다
+# artifacts(layer.zip, function.zip)은 docker cp로 꺼내갑니다
