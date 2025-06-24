@@ -29,9 +29,9 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v2
         name: Configure AWS Credentials
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:           ${{ secrets.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - id: publish_layer
         name: Publish new layer version
@@ -54,9 +54,18 @@ jobs:
 
       - name: Update Lambda code
         run: |
-          aws lambda update-function-code \
-            --function-name my-fastapi \
-            --zip-file fileb://function.zip
+          for i in 1 2 3; do
+            echo "Updating code (attempt $i)..."
+            if aws lambda update-function-code \
+                --function-name my-fastapi \
+                --zip-file fileb://function.zip; then
+              echo "Update succeeded"
+              break
+            else
+              echo "Conflict detected, retrying in 5s..."
+              sleep 5
+            fi
+          done
 
       - name: Deploy HTTP API stage
         run: |
