@@ -8,6 +8,7 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -18,12 +19,13 @@ jobs:
       - name: Build packaging image
         run: docker build -f Dockerfile.build -t fastapi-packager .
 
-      - name: Extract function package
+      - name: Extract packages
         run: |
           CID=$(docker create fastapi-packager)
+          docker cp $CID:/layer.zip ./layer.zip
           docker cp $CID:/function.zip ./function.zip
           docker rm $CID
-          ls -lh function.zip
+          ls -lh layer.zip function.zip
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -32,15 +34,26 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - id: publish_layer
+        name: Publish new layer version
+        run: |
+          ARN=$(aws lambda publish-layer-version \
+            --layer-name fastapi-deps \
+            --zip-file fileb://layer.zip \
+            --compatible-runtimes python3.12 \
+            --query 'LayerVersionArn' --output text)
+          echo "layer_arn=$ARN" >> $GITHUB_OUTPUT
+
       - name: Update Lambda configuration
         run: |
           aws lambda update-function-configuration \
             --function-name my-fastapi \
+            --layers ${{ steps.publish_layer.outputs.layer_arn }} \
             --timeout 60 \
             --memory-size 512 \
             --environment Variables="{OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }},OPENAI_BASE_URL=${{ secrets.OPENAI_BASE_URL }},OPENAI_BODY_ASSISTANT_ID=${{ secrets.OPENAI_BODY_ASSISTANT_ID }},OPENAI_STYLE_ASSISTANT_ID=${{ secrets.OPENAI_STYLE_ASSISTANT_ID }}}"
 
-      - name: Update Lambda function code
+      - name: Update Lambda code
         run: |
           aws lambda update-function-code \
             --function-name my-fastapi \
