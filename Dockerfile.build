@@ -23,3 +23,4 @@ RUN zip -9 -r /function.zip .
 FROM scratch AS artifacts
 COPY --from=layer-builder /layer.zip /layer.zip
 COPY --from=func-builder /function.zip /function.zip
+CMD ["true"]
