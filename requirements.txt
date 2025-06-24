@@ -1,12 +1,5 @@
-# requirements.txt
-
 fastapi~=0.115.13
-uvicorn~=0.23.2
-openai~=1.88.0
-python-dotenv~=1.1.0
 pydantic~=2.11.7
-
+openai~=1.88.0
 langchain==0.3.25
-langchain-community==0.3.25
-langchain-openai~=0.3.24
 mangum~=0.19.0
