@@ -26,11 +26,9 @@ jobs:
         run: |
           # 컨테이너 생성
           CID=$(docker create fastapi-packager)
-          # layer.zip, function.zip 복사
           docker cp $CID:/layer.zip ./layer.zip
           docker cp $CID:/function.zip ./function.zip
           docker rm $CID
-          # 파일 크기 확인
           ls -lh layer.zip function.zip
 
       - name: Configure AWS Credentials
