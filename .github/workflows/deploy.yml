@@ -23,24 +23,36 @@ jobs:
     - name: Install zip
       run: sudo apt-get update && sudo apt-get install -y zip
 
-    - name: Build layer & function packages
+    - name: Build layer package
       run: |
-        rm -rf layer package function.zip layer.zip
-        mkdir -p layer/python package
+        rm -rf layer layer.zip
+        mkdir -p layer/python
         docker run --rm \
           --platform linux/amd64 \
           -v "$PWD":/var/task \
           -w /var/task \
-          --entrypoint /bin/bash \
           public.ecr.aws/lambda/python:3.12 \
-          -c "\
+          bash -lc "\
             microdnf install -y zip && \
             pip install --upgrade pip && \
-            pip install -r requirements.txt --target layer/python && \
+            pip install fastapi pydantic openai tiktoken --target layer/python && \
+            cd layer && zip -9 -r ../layer.zip python \
+          "      
+
+    - name: Build function package
+      run: |
+        rm -rf package function.zip
+        mkdir -p package
+        docker run --rm \
+          --platform linux/amd64 \
+          -v "$PWD":/var/task \
+          -w /var/task \
+          public.ecr.aws/lambda/python:3.12 \
+          bash -lc "\
+            pip install --upgrade pip && \
             pip install -r requirements.txt --target package/ \
           "
         cp -r app package/app
-        (cd layer && zip -r ../layer.zip python)
         (cd package && zip -r ../function.zip .)
 
     - name: Configure AWS Credentials
