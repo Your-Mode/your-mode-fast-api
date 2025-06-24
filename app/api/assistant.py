@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+
 from app.schemas.diagnosis import DiagnoseRequest, DiagnoseResponse
 from app.schemas.content import CreateContentRequest
 from app.services.assistant_service import diagnose_body_type_with_assistant, create_content
