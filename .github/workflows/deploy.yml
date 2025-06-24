@@ -10,11 +10,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
-        name: Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: docker/setup-buildx-action@v2
-        name: Set up Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
       - name: Build packaging image
         run: docker build -f Dockerfile.build -t fastapi-packager .
@@ -27,8 +27,8 @@ jobs:
           docker rm $CID
           ls -lh layer.zip function.zip
 
-      - uses: aws-actions/configure-aws-credentials@v2
-        name: Configure AWS Credentials
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -41,6 +41,7 @@ jobs:
             --layer-name fastapi-deps \
             --zip-file fileb://layer.zip \
             --compatible-runtimes python3.12 \
+            --compatible-architectures x86_64 \
             --query 'LayerVersionArn' --output text)
           echo "layer_arn=$ARN" >> $GITHUB_OUTPUT
 
@@ -48,6 +49,7 @@ jobs:
         run: |
           aws lambda update-function-configuration \
             --function-name my-fastapi \
+            --architectures x86_64 \
             --layers ${{ steps.publish_layer.outputs.layer_arn }} \
             --timeout 60 \
             --memory-size 512 \
