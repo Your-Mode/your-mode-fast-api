@@ -42,21 +42,10 @@ jobs:
               cd layer && zip -9 -r ../layer.zip python \
             "
 
-      # 2) 함수 코드 패키지 빌드
       - name: Build function package
         run: |
           rm -rf package function.zip
           mkdir -p package
-          docker run --rm \
-            --platform linux/amd64 \
-            --entrypoint /bin/bash \
-            -v "$PWD":/var/task \
-            -w /var/task \
-            public.ecr.aws/lambda/python:3.12 \
-            -c "\
-              pip install --upgrade pip && \
-              pip install -r requirements.txt --target package/ \
-            "
           cp -r app package/app
           (cd package && zip -r ../function.zip .)
 
