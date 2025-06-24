@@ -17,10 +17,11 @@ jobs:
       with:
         python-version: '3.12'
 
-    - name: Install Docker & zip
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y docker.io zip
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Install zip
+      run: sudo apt-get update && sudo apt-get install -y zip
 
     - name: Build layer & function packages
       run: |
