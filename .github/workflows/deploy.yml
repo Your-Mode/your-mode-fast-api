@@ -60,6 +60,9 @@ jobs:
             --memory-size 512 \
             --environment Variables="{OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }},OPENAI_BASE_URL=${{ secrets.OPENAI_BASE_URL }},OPENAI_BODY_ASSISTANT_ID=${{ secrets.OPENAI_BODY_ASSISTANT_ID }},OPENAI_STYLE_ASSISTANT_ID=${{ secrets.OPENAI_STYLE_ASSISTANT_ID }}}"
 
+      - name: Wait for config update to finish
+        run: sleep 10  # 10초 정도 대기
+
       - name: Update Lambda function code
         run: |
           aws lambda update-function-code \
