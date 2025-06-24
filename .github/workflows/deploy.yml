@@ -1,4 +1,3 @@
-# .github/workflows/deploy.yml
 name: Deploy FastAPI to Lambda
 
 on:
@@ -10,11 +9,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        name: Checkout code
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+      - uses: docker/setup-buildx-action@v2
+        name: Set up Docker Buildx
 
       - name: Build packaging image
         run: docker build -f Dockerfile.build -t fastapi-packager .
@@ -27,25 +26,23 @@ jobs:
           docker rm $CID
           ls -lh layer.zip function.zip
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - uses: aws-actions/configure-aws-credentials@v2
+        name: Configure AWS Credentials
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region:           ${{ secrets.AWS_REGION }}
 
-      # 3) Lambda Layer 발행
-      - name: Publish new layer version
-        id: publish_layer
+      - id: publish_layer
+        name: Publish new layer version
         run: |
-          LAYER_ARN=$(aws lambda publish-layer-version \
+          ARN=$(aws lambda publish-layer-version \
             --layer-name fastapi-deps \
             --zip-file fileb://layer.zip \
             --compatible-runtimes python3.12 \
             --query 'LayerVersionArn' --output text)
-          echo "layer_arn=$LAYER_ARN" >> $GITHUB_OUTPUT
+          echo "layer_arn=$ARN" >> $GITHUB_OUTPUT
 
-      # 4) Lambda 설정 업데이트 (레이어, ENV, 타임아웃, 메모리)
       - name: Update Lambda configuration
         run: |
           aws lambda update-function-configuration \
@@ -55,14 +52,12 @@ jobs:
             --timeout 60 \
             --memory-size 512
 
-      # 5) Lambda 코드 배포
       - name: Update Lambda code
         run: |
           aws lambda update-function-code \
             --function-name my-fastapi \
             --zip-file fileb://function.zip
 
-      # 6) API Gateway HTTP API 스테이지 재배포
       - name: Deploy HTTP API stage
         run: |
           API_ID=$(aws apigatewayv2 get-apis \
