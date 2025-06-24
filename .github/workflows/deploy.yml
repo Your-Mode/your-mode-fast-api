@@ -37,8 +37,8 @@ jobs:
       - name: Install AWS CLI v2
         run: |
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          unzip awscliv2.zip
-          sudo ./aws/install
+          unzip -qq awscliv2.zip
+          sudo ./aws/install --update
 
       - id: publish_layer
         name: Publish new layer version
@@ -55,7 +55,6 @@ jobs:
         run: |
           aws lambda update-function-configuration \
             --function-name my-fastapi \
-            --architectures x86_64 \
             --layers ${{ steps.publish_layer.outputs.layer_arn }} \
             --timeout 60 \
             --memory-size 512 \
