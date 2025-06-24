@@ -1,30 +1,21 @@
 # Dockerfile.build
-# Python 3.12 x86_64 Amazon Linux 환경에서 dependencies와 코드 분리 패키징
-
-# 1) 베이스 이미지
-FROM public.ecr.aws/lambda/python:3.12 AS base
-
-# 2) 레이어 전용 빌드
-FROM base AS layer-builder
+# Python 3.12 x86_64 Amazon Linux 환경
+FROM public.ecr.aws/lambda/python:3.12 AS builder
 RUN microdnf install -y zip findutils && pip install --upgrade pip
-WORKDIR /layer
+
+WORKDIR /build
+# 1. 프로덕션 의존성 설치
 COPY requirements.txt .
-# 의존성만 manylinux wheel 형태로 설치
-RUN pip install --no-cache-dir --only-binary=:all: -r requirements.txt --target python \
+RUN pip install --no-cache-dir --only-binary=:all: -r requirements.txt --target ./python \
  && find python -type d -name "tests" -exec rm -rf {} + \
  && find python -type d -name "__pycache__" -exec rm -rf {} + \
- && rm -rf python/*.dist-info \
- && zip -9 -r /layer.zip python
+ && rm -rf python/*.dist-info
 
-# 3) 함수 코드 전용 빌드
-FROM base AS func-builder
-RUN microdnf install -y zip && pip install --upgrade pip
-WORKDIR /package
+# 2. 앱 코드 복사 및 function.zip 생성
 COPY app ./app
-RUN zip -9 -r /function.zip app
+RUN zip -9 -r /build/function.zip python app
 
-# 4) 아티팩트만 모아두기
+# 3. 산출물만 가져오기
 FROM scratch AS artifacts
-COPY --from=layer-builder /layer.zip   /layer.zip
-COPY --from=func-builder   /function.zip /function.zip
+COPY --from=builder /build/function.zip /function.zip
 CMD ["true"]
