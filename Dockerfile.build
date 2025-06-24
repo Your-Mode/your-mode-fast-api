@@ -1,18 +1,23 @@
-# 1) AWS Lambda Python 3.12 (Amazon Linux x86_64)
+# Dockerfile.build
+
+# 1) AWS Lambda Python 3.12 런타임 (Amazon Linux 2 x86_64)
 FROM public.ecr.aws/lambda/python:3.12 AS base
 
-# 2) 레이어 전용 스테이지
+################################################
+# 2) 레이어 전용 빌드 스테이지
 FROM base AS layer-builder
-RUN microdnf install -y zip findutils
+
+# zip, findutils 설치 및 pip 업그레이드
+RUN microdnf install -y zip findutils \
+ && pip install --upgrade pip
 
 WORKDIR /layer
+
+# requirements.txt 복사
 COPY requirements.txt .
 
-# Amazon Linux x86_64 manylinux wheel 강제 설치
-RUN pip install --upgrade pip \
- && pip install --no-cache-dir \
-      --platform manylinux2014_x86_64 \
-      --only-binary=:all: \
+# 의존성 설치 → manylinux x86_64 휠을 자동으로 받아옴
+RUN pip install --no-cache-dir \
       -r requirements.txt \
       --target python \
  && find python -type d -name "__pycache__" -exec rm -rf {} + \
@@ -20,16 +25,26 @@ RUN pip install --upgrade pip \
  && rm -rf python/*.dist-info \
  && zip -9 -r /layer.zip python
 
-# 3) 함수 코드 전용 스테이지
+################################################
+# 3) 함수 코드 전용 빌드 스테이지
 FROM base AS func-builder
+
+# zip 설치
 RUN microdnf install -y zip
 
 WORKDIR /package
+
+# 실제 FastAPI 앱 코드만 복사
 COPY app ./app
+
+# function.zip 생성
 RUN zip -9 -r /function.zip app
 
-# 4) 산출물만 모으기
+################################################
+# 4) 산출물만 모으는 최종 스테이지
 FROM scratch AS artifacts
+
 COPY --from=layer-builder /layer.zip   /layer.zip
 COPY --from=func-builder   /function.zip /function.zip
+
 CMD ["true"]
