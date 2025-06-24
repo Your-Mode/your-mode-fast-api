@@ -1,6 +1,6 @@
 fastapi~=0.115.13
 pydantic~=2.11.7
-pydantic-core==2.1.7      # ← 이 한 줄만 추가해 주세요
+pydantic-core==2.11.0
 openai~=1.88.0
 langchain==0.3.25
 mangum~=0.19.0
