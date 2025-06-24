@@ -89,8 +89,7 @@ jobs:
       - name: Deploy HTTP API stage
         run: |
           API_ID=$(aws apigatewayv2 get-apis \
-            --query "Items[?Name=='your-mode-http-api'].ApiId" --output text)
-          echo "DEBUG: API_ID is '$API_ID'"
+            --query "Items[?Name=='yourmode-api-gateway'].ApiId" --output text)
           aws apigatewayv2 create-deployment \
             --api-id "$API_ID" \
             --stage-name prod
