@@ -10,11 +10,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        name: Checkout code
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+      - uses: docker/setup-buildx-action@v2
+        name: Set up Docker Buildx
 
       - name: Build packaging image
         run: docker build -f Dockerfile.build -t fastapi-packager .
@@ -27,8 +27,8 @@ jobs:
           docker rm $CID
           ls -lh layer.zip function.zip
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - uses: aws-actions/configure-aws-credentials@v2
+        name: Configure AWS Credentials
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -44,7 +44,7 @@ jobs:
             --query 'LayerVersionArn' --output text)
           echo "layer_arn=$ARN" >> $GITHUB_OUTPUT
 
-      - name: Update Lambda configuration
+      - name: Update Lambda configuration with layer
         run: |
           aws lambda update-function-configuration \
             --function-name my-fastapi \
@@ -53,7 +53,7 @@ jobs:
             --memory-size 512 \
             --environment Variables="{OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }},OPENAI_BASE_URL=${{ secrets.OPENAI_BASE_URL }},OPENAI_BODY_ASSISTANT_ID=${{ secrets.OPENAI_BODY_ASSISTANT_ID }},OPENAI_STYLE_ASSISTANT_ID=${{ secrets.OPENAI_STYLE_ASSISTANT_ID }}}"
 
-      - name: Update Lambda code
+      - name: Update Lambda function code
         run: |
           aws lambda update-function-code \
             --function-name my-fastapi \

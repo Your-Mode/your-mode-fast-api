@@ -1,33 +1,34 @@
-# ──────────────────────────────────────────────────
-# 1) 베이스 이미지: AWS Lambda Python 3.12 (Amazon Linux x86_64)
+# 1) AWS Lambda Python 3.12 (Amazon Linux x86_64)
 FROM public.ecr.aws/lambda/python:3.12 AS base
 
-# ──────────────────────────────────────────────────
 # 2) 레이어 전용 스테이지
 FROM base AS layer-builder
 RUN microdnf install -y zip findutils
+
 WORKDIR /layer
 COPY requirements.txt .
 
-# Amazon Linux 환경에서 manylinux x86_64 wheel 설치
+# Amazon Linux x86_64 manylinux wheel 강제 설치
 RUN pip install --upgrade pip \
- && pip install --no-cache-dir -r requirements.txt --target python \
- # 불필요 파일 제거
+ && pip install --no-cache-dir \
+      --platform manylinux2014_x86_64 \
+      --only-binary=:all: \
+      -r requirements.txt \
+      --target python \
  && find python -type d -name "__pycache__" -exec rm -rf {} + \
- # 레이어 압축
+ && find python -type d -name "tests"       -exec rm -rf {} + \
+ && rm -rf python/*.dist-info \
  && zip -9 -r /layer.zip python
 
-# ──────────────────────────────────────────────────
 # 3) 함수 코드 전용 스테이지
 FROM base AS func-builder
 RUN microdnf install -y zip
+
 WORKDIR /package
 COPY app ./app
-# 코드만 압축
 RUN zip -9 -r /function.zip app
 
-# ──────────────────────────────────────────────────
-# 4) 산출물 모으기
+# 4) 산출물만 모으기
 FROM scratch AS artifacts
 COPY --from=layer-builder /layer.zip   /layer.zip
 COPY --from=func-builder   /function.zip /function.zip
