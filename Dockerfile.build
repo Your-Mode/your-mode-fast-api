@@ -1,27 +1,30 @@
-FROM public.ecr.aws/lambda/python:3.12 AS builder
-RUN microdnf install -y zip findutils && \
-    pip install --upgrade pip
+# Dockerfile.build
+# Python 3.12 x86_64 Amazon Linux 환경에서 dependencies와 코드 분리 패키징
 
+# 1) 베이스 이미지
+FROM public.ecr.aws/lambda/python:3.12 AS base
+
+# 2) 레이어 전용 빌드
+FROM base AS layer-builder
+RUN microdnf install -y zip findutils && pip install --upgrade pip
 WORKDIR /layer
 COPY requirements.txt .
-# 바이너리 wheel 강제 설치 및 불필요 파일 제거
-RUN pip install --no-cache-dir \
-        --only-binary=:all: \
-        -r requirements.txt \
-        --target python && \
-    find python -type d -name "tests" -exec rm -rf {} + && \
-    find python -type d -name "__pycache__" -exec rm -rf {} + && \
-    zip -9 -r /layer.zip python
+# 의존성만 manylinux wheel 형태로 설치
+RUN pip install --no-cache-dir --only-binary=:all: -r requirements.txt --target python \
+ && find python -type d -name "tests" -exec rm -rf {} + \
+ && find python -type d -name "__pycache__" -exec rm -rf {} + \
+ && rm -rf python/*.dist-info \
+ && zip -9 -r /layer.zip python
 
-FROM public.ecr.aws/lambda/python:3.12 AS final
-RUN microdnf install -y unzip
+# 3) 함수 코드 전용 빌드
+FROM base AS func-builder
+RUN microdnf install -y zip && pip install --upgrade pip
 WORKDIR /package
-# 1) 앱 코드 복사
 COPY app ./app
-# 2) layer.zip 풀어서 dependencies 병합
-COPY --from=builder /layer.zip .
-RUN unzip layer.zip -d python_layer && \
-    cp -r python_layer/python . && \
-    zip -9 -r function.zip python app
+RUN zip -9 -r /function.zip app
 
+# 4) 아티팩트만 모아두기
+FROM scratch AS artifacts
+COPY --from=layer-builder /layer.zip   /layer.zip
+COPY --from=func-builder   /function.zip /function.zip
 CMD ["true"]
