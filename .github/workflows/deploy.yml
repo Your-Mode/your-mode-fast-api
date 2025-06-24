@@ -1,0 +1,84 @@
+name: Deploy FastAPI to Lambda
+
+on:
+  push:
+    branches: [ main ]        # main 브랜치에 푸시될 때마다 실행
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Install Docker & zip
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y docker.io zip
+
+    - name: Build layer & function packages
+      run: |
+        rm -rf layer package function.zip layer.zip
+        mkdir -p layer/python package
+        docker run --rm \
+          --platform linux/amd64 \
+          -v "$PWD":/var/task \
+          -w /var/task \
+          --entrypoint /bin/bash \
+          public.ecr.aws/lambda/python:3.12 \
+          -c "\
+            microdnf install -y zip && \
+            pip install --upgrade pip && \
+            pip install -r requirements.txt --target layer/python && \
+            pip install -r requirements.txt --target package/ \
+          "
+        cp -r app package/app
+        (cd layer && zip -r ../layer.zip python)
+        (cd package && zip -r ../function.zip .)
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Publish new layer version
+      id: publish_layer
+      run: |
+        LAYER_ARN=$(aws lambda publish-layer-version \
+          --layer-name fastapi-deps \
+          --zip-file fileb://layer.zip \
+          --compatible-runtimes python3.12 \
+          --query 'LayerVersionArn' --output text)
+        echo "layer_arn=$LAYER_ARN" >> $GITHUB_OUTPUT
+
+    - name: Update Lambda configuration (layer & env & timeout & memory)
+      run: |
+        aws lambda update-function-configuration \
+          --function-name my-fastapi \
+          --layers ${{ steps.publish_layer.outputs.layer_arn }} \
+          --environment Variables="{OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }},OPENAI_BASE_URL=${{ secrets.OPENAI_BASE_URL }},OPENAI_BODY_ASSISTANT_ID=${{ secrets.OPENAI_BODY_ASSISTANT_ID }},OPENAI_STYLE_ASSISTANT_ID=${{ secrets.OPENAI_STYLE_ASSISTANT_ID }}}" \
+          --timeout 60 \
+          --memory-size 512
+    
+
+    - name: Update Lambda code
+      run: |
+        aws lambda update-function-code \
+          --function-name my-fastapi \
+          --zip-file fileb://function.zip
+
+    - name: Deploy HTTP API stage
+      run: |
+        API_ID=$(aws apigatewayv2 get-apis \
+          --query "Items[?Name=='your-mode-http-api'].ApiId" --output text)
+        aws apigatewayv2 create-deployment \
+          --api-id $API_ID \
+          --stage-name prod
