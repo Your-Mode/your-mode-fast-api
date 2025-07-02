@@ -2,10 +2,12 @@ import re
 import json
 import time
 import os
-from dotenv import load_dotenv
 from openai import OpenAI
 
-load_dotenv()
+if os.getenv("AWS_LAMBDA_FUNCTION_NAME") is None:
+    from dotenv import load_dotenv
+    load_dotenv()
+
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # 여러분이 생성해 둔 Assistant ID
