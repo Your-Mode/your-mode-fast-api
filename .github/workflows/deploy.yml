@@ -16,9 +16,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build packaging image
-        run: docker build -f Dockerfile.build -t fastapi-packager .
-
+      - name: Build packaging image (ARM64 cross-build)
+        run: |
+          docker buildx create --use
+          docker buildx build \
+            --platform linux/arm64 \
+            -f Dockerfile.build \
+            -t fastapi-packager \
+            --load .
+      
       - name: Extract packages
         run: |
           CID=$(docker create fastapi-packager)
