@@ -1,8 +1,10 @@
 from fastapi import APIRouter
 
+from app.schemas.chat import ChatRequest, ChatResponse
 from app.schemas.diagnosis import DiagnoseRequest, DiagnoseResponse
 from app.schemas.content import CreateContentRequest
-from app.services.assistant_service import diagnose_body_type_with_assistant, create_content
+from app.services.assistant_service import diagnose_body_type_with_assistant, create_content, chat_body_assistant, \
+    chat_body_result
 
 router = APIRouter()
 
@@ -17,7 +19,7 @@ def diagnose_body_type(request: DiagnoseRequest):
     )
 
 
-@router.post("/create-content", description="콘텐츠 초안 작성" )
+@router.post("/create-content", description="콘텐츠 초안 작성")
 def recommend_content(request: CreateContentRequest):
     return create_content(
         name=request.name,
@@ -30,4 +32,19 @@ def recommend_content(request: CreateContentRequest):
         recommended_style=request.recommended_style,
         avoid_style=request.avoid_style,
         budget=request.budget
+    )
+
+
+@router.post("/chat", description="체형 진단 개별 질문에 대한 응답", response_model=ChatResponse)
+def chat(request: ChatRequest):
+    return chat_body_assistant(request.question, request.answer)
+
+
+@router.post("/chat/body-result", response_model=DiagnoseResponse)
+def post_body_result(request: DiagnoseRequest):
+    return chat_body_result(
+        answers=request.answers,
+        height=request.height,
+        weight=request.weight,
+        gender=request.gender,
     )

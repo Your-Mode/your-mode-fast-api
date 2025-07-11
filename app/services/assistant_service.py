@@ -6,6 +6,7 @@ from openai import OpenAI
 
 if os.getenv("AWS_LAMBDA_FUNCTION_NAME") is None:
     from dotenv import load_dotenv
+
     load_dotenv()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -13,6 +14,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # 여러분이 생성해 둔 Assistant ID
 BODY_ASSISTANT_ID = os.getenv("OPENAI_BODY_ASSISTANT_ID")
 STYLE_ASSISTANT_ID = os.getenv("OPENAI_STYLE_ASSISTANT_ID")
+CHAT_ASSISTANT_ID = os.getenv("OPENAI_CHAT_ASSISTANT_ID")
 
 
 def _extract_json(raw: str) -> dict:
@@ -135,3 +137,82 @@ def create_content(
     raw = msgs[0].content[0].text.value  # 어시스턴트가 첫 번째 메시지로 보낸 응답
 
     return raw
+
+
+def chat_body_assistant(question: str, answer: str):
+    prompt = (
+        f"{question}에 대한 응답입니다.\n"
+        f"- 응답: {answer}\n"
+    )
+
+    run = client.beta.threads.create_and_run(
+        assistant_id=CHAT_ASSISTANT_ID,
+        thread={"messages": [{"role": "user", "content": prompt}]}
+    )
+
+    thread_id = run.thread_id
+    run_id = run.id
+
+    while True:
+        status = client.beta.threads.runs.retrieve(
+            thread_id=thread_id,
+            run_id=run_id
+        )
+        if status.status == "completed":
+            break
+        time.sleep(0.3)
+
+    msgs = client.beta.threads.messages.list(thread_id=thread_id).data
+    raw = msgs[0].content[0].text.value  # 어시스턴트가 첫 번째 메시지로 보낸 응답
+
+    try:
+        return _extract_json(raw)
+    except Exception as e:
+        # 파싱 실패 시 디버그 로그와 함께 예외 올리기
+        print("🛠️ [DEBUG] raw from assistant:\n", raw)
+        raise ValueError(f"JSON 파싱 실패: {e}")
+
+
+def chat_body_result(
+        answers: list[str],
+        height: float,
+        weight: float,
+        gender: str
+):
+    prompt = (
+            f"다음 응답 내용을 바탕으로 골격 진단\n"
+            f"- 성별: {gender}\n"
+            f"- 키: {height}cm\n"
+            f"- 체중: {weight}kg\n"
+            f"- 설문 응답:\n"
+            + "\n".join(f"{i + 1}. {a}" for i, a in enumerate(answers))
+            + "\n\n"
+              "체형 진단"
+    )
+
+    run = client.beta.threads.create_and_run(
+        assistant_id=CHAT_ASSISTANT_ID,
+        thread={"messages": [{"role": "user", "content": prompt}]}
+    )
+
+    thread_id = run.thread_id
+    run_id = run.id
+
+    while True:
+        status = client.beta.threads.runs.retrieve(
+            thread_id=thread_id,
+            run_id=run_id
+        )
+        if status.status == "completed":
+            break
+        time.sleep(0.3)
+
+    msgs = client.beta.threads.messages.list(thread_id=thread_id).data
+    raw = msgs[0].content[0].text.value  # 어시스턴트가 첫 번째 메시지로 보낸 응답
+
+    try:
+        return _extract_json(raw)
+    except Exception as e:
+        # 파싱 실패 시 디버그 로그와 함께 예외 올리기
+        print("🛠️ [DEBUG] raw from assistant:\n", raw)
+        raise ValueError(f"JSON 파싱 실패: {e}")
