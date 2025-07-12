@@ -40,7 +40,7 @@ def chat(request: ChatRequest):
     return chat_body_assistant(request.question, request.answer)
 
 
-@router.post("/chat/body-result", response_model=DiagnoseResponse)
+@router.post("/body-result", response_model=DiagnoseResponse)
 def post_body_result(request: DiagnoseRequest):
     return chat_body_result(
         answers=request.answers,
