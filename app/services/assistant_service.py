@@ -180,7 +180,7 @@ def chat_body_result(
         gender: str
 ):
     prompt = (
-            f"다음 응답 내용을 바탕으로 골격 진단\n"
+            f"다음 응답 내용을 바탕으로 골격 진단 결과를 알려줘\n"
             f"- 성별: {gender}\n"
             f"- 키: {height}cm\n"
             f"- 체중: {weight}kg\n"
