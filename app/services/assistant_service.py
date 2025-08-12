@@ -3,6 +3,7 @@ import json
 import time
 import os
 from openai import OpenAI
+from typing import Any, Dict
 
 if os.getenv("AWS_LAMBDA_FUNCTION_NAME") is None:
     from dotenv import load_dotenv
@@ -34,56 +35,117 @@ def _extract_json(raw: str) -> dict:
     return json.loads(json_str, strict=False)
 
 
-def diagnose_body_type_with_assistant(
-        answers: list[str],
-        height: float,
-        weight: float,
-        gender: str
-) -> dict:
-    """
-    1) 사용자 정보로 prompt 구성
-    2) create_and_run 으로 assistant 호출
-    3) 폴링하여 run 완료 대기
-    4) 마지막 어시스턴트 메시지(raw)에서 JSON 추출 → dict 반환
-    """
-    prompt = (
-            f"제 체형을 진단해 주세요.\n"
-            f"- 성별: {gender}\n"
-            f"- 키: {height}cm\n"
-            f"- 체중: {weight}kg\n"
-            f"- 설문 응답:\n"
-            + "\n".join(f"{i + 1}. {a}" for i, a in enumerate(answers))
-            + "\n\n"
-              "체형 진단"
+RESULT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "body_type": {"type": "string"},
+        "type_description": {"type": "string"},
+        "detailed_features": {"type": "string"},
+        "attraction_points": {"type": "string"},
+        "recommended_styles": {"type": "string"},
+        "avoid_styles": {"type": "string"},
+        "styling_fixes": {"type": "string"},
+        "styling_tips": {"type": "string"},
+    },
+    "required": [
+        "body_type",
+        "type_description",
+        "detailed_features",
+        "attraction_points",
+        "recommended_styles",
+        "avoid_styles",
+        "styling_fixes",
+        "styling_tips",
+    ],
+    "additionalProperties": False,
+}
+
+def _build_prompt(answers: list[str], height: float, weight: float, gender: str) -> str:
+    return (
+        "당신은 골격 진단 및 패션 스타일리스트입니다.\n"
+        "아래 사용자 정보를 바탕으로 체형을 진단하고, 반드시 JSON으로만 응답하세요.\n"
+        "출력은 다음 스키마의 각 필드를 한국어로 충실히 채우세요. 모든 값은 문자열입니다.\n"
+        "필드: body_type, type_description, detailed_features, attraction_points, "
+        "recommended_styles, avoid_styles, styling_fixes, styling_tips\n\n"
+        f"- 성별: {gender}\n"
+        f"- 키: {height}cm\n"
+        f"- 체중: {weight}kg\n"
+        "- 설문 응답:\n"
+        + "\n".join(f"{i+1}. {a}" for i, a in enumerate(answers))
+        + "\n\n주의: 코드블록 없이 순수 JSON만 출력하세요."
     )
 
-    # 2) create_and_run 호출
+def diagnose_body_type_with_assistant(
+    answers: list[str],
+    height: float,
+    weight: float,
+    gender: str,
+    *,
+    timeout_sec: int = 60,
+) -> Dict[str, Any]:
+    """
+    1) 사용자 정보로 prompt 구성
+    2) create_and_run 으로 assistant 호출 (JSON 스키마 강제)
+    3) 폴링하여 run 완료 대기(타임아웃/에러 처리)
+    4) 마지막 어시스턴트 메시지(raw)에서 JSON 파싱 → dict 반환
+    """
+    prompt = _build_prompt(answers, height, weight, gender)
+
     run = client.beta.threads.create_and_run(
         assistant_id=BODY_ASSISTANT_ID,
-        thread={"messages": [{"role": "user", "content": prompt}]}
+        thread={"messages": [{"role": "user", "content": prompt}]},
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "BodyDiagnosisResult",
+                "strict": True,
+                "schema": RESULT_SCHEMA,
+            },
+        },
     )
+
     thread_id = run.thread_id
     run_id = run.id
 
-    # 3) 완료될 때까지 폴링
+    # 상태 폴링 (에러/타임아웃 처리)
+    deadline = time.time() + timeout_sec
     while True:
-        status = client.beta.threads.runs.retrieve(
-            thread_id=thread_id,
-            run_id=run_id
-        )
+        status = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
         if status.status == "completed":
             break
+        if status.status in {"failed", "cancelled", "expired"}:
+            raise RuntimeError(
+                f"Assistants run ended with status={status.status}, "
+                f"last_error={getattr(status, 'last_error', None)}"
+            )
+        if time.time() > deadline:
+            raise TimeoutError("Assistants run timed out")
         time.sleep(0.3)
 
-    # 4) 메시지 리스트에서 어시스턴트 응답 꺼내기
-    msgs = client.beta.threads.messages.list(thread_id=thread_id).data
-    raw = msgs[0].content[0].text.value  # 어시스턴트가 첫 번째 메시지로 보낸 응답
+    # 최신 assistant 메시지 안전 추출
+    # (일반적으로 list()는 최신이 앞에 오지만, role/시간 기준으로 한 번 더 필터)
+    messages = client.beta.threads.messages.list(thread_id=thread_id).data
+    assistant_msgs = [m for m in messages if getattr(m, "role", "") == "assistant"]
+    if not assistant_msgs:
+        raise ValueError("No assistant message found")
 
-    # 5) JSON 부분만 파싱해서 dict 로 반환
+    # created_at이 있다면 최신 정렬, 없다면 그대로 첫 번째 사용
     try:
-        return _extract_json(raw)
+        assistant_msgs.sort(key=lambda m: getattr(m, "created_at", 0), reverse=True)
+    except Exception:
+        pass
+
+    first = assistant_msgs[0]
+    if not first.content or getattr(first.content[0], "type", "text") != "text":
+        # 도구 호출 등 다른 타입이 섞였을 가능성 방어
+        raise ValueError(f"Unexpected message content type: {getattr(first.content[0], 'type', 'unknown')}")
+
+    raw = first.content[0].text.value.strip()
+
+    try:
+        # strict json_schema 덕분에 대부분 안전하지만, 혹시 모를 포맷 이슈 방어
+        return json.loads(raw)
     except Exception as e:
-        # 파싱 실패 시 디버그 로그와 함께 예외 올리기
         print("🛠️ [DEBUG] raw from assistant:\n", raw)
         raise ValueError(f"JSON 파싱 실패: {e}")
 
@@ -148,6 +210,7 @@ def chat_body_assistant(question: str, answer: str):
     run = client.beta.threads.create_and_run(
         assistant_id=CHAT_ASSISTANT_ID,
         thread={"messages": [{"role": "user", "content": prompt}]}
+
     )
 
     thread_id = run.thread_id
@@ -179,6 +242,31 @@ def chat_body_result(
         weight: float,
         gender: str
 ):
+    schema = {
+        "type": "object",
+        "properties": {
+            "body_type": {"type": "string"},
+            "type_description": {"type": "string"},
+            "detailed_features": {"type": "string"},
+            "attraction_points": {"type": "string"},
+            "recommended_styles": {"type": "string"},
+            "avoid_styles": {"type": "string"},
+            "styling_fixes": {"type": "string"},
+            "styling_tips": {"type": "string"}
+        },
+        "required": [
+            "body_type",
+            "type_description",
+            "detailed_features",
+            "attraction_points",
+            "recommended_styles",
+            "avoid_styles",
+            "styling_fixes",
+            "styling_tips"
+        ],
+        "additionalProperties": False
+    }
+
     prompt = (
             f"다음 응답 내용을 바탕으로 골격 진단 결과를 알려줘\n"
             f"- 성별: {gender}\n"
@@ -192,27 +280,34 @@ def chat_body_result(
 
     run = client.beta.threads.create_and_run(
         assistant_id=CHAT_ASSISTANT_ID,
-        thread={"messages": [{"role": "user", "content": prompt}]}
+        thread={"messages": [{"role": "user", "content": prompt}]},
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "BodyDiagnosisResult",
+                "strict": True,
+                "schema": schema
+            }
+        },
     )
 
     thread_id = run.thread_id
     run_id = run.id
 
+    deadline = time.time() + 60
+
     while True:
-        status = client.beta.threads.runs.retrieve(
-            thread_id=thread_id,
-            run_id=run_id
-        )
+        status = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
         if status.status == "completed":
             break
+        if status.status in {"failed", "cancelled", "expired"}:
+            raise RuntimeError(
+                f"Run ended with status={status.status}, last_error={getattr(status, 'last_error', None)}")
+        if time.time() > deadline:
+            raise TimeoutError("Assistants run timed out")
         time.sleep(0.3)
 
     msgs = client.beta.threads.messages.list(thread_id=thread_id).data
-    raw = msgs[0].content[0].text.value  # 어시스턴트가 첫 번째 메시지로 보낸 응답
-
-    try:
-        return _extract_json(raw)
-    except Exception as e:
-        # 파싱 실패 시 디버그 로그와 함께 예외 올리기
-        print("🛠️ [DEBUG] raw from assistant:\n", raw)
-        raise ValueError(f"JSON 파싱 실패: {e}")
+    assistant_msg = next((m for m in msgs if m.role == "assistant"), None)
+    if not assistant_msg:
+        raise ValueError("No assistant message found")
