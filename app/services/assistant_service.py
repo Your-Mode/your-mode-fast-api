@@ -308,6 +308,26 @@ def chat_body_result(
         time.sleep(0.3)
 
     msgs = client.beta.threads.messages.list(thread_id=thread_id).data
-    assistant_msg = next((m for m in msgs if m.role == "assistant"), None)
-    if not assistant_msg:
+
+    # 최신 assistant 메시지 선택 (created_at 기준 내림차순)
+    assistant_msgs = [m for m in msgs if getattr(m, "role", "") == "assistant"]
+    if not assistant_msgs:
         raise ValueError("No assistant message found")
+    assistant_msgs.sort(key=lambda m: getattr(m, "created_at", 0), reverse=True)
+    msg = assistant_msgs[0]
+
+    # content 에서 text 파트만 안전하게 추출
+    text_parts = [p for p in getattr(msg, "content", []) if getattr(p, "type", "") == "text"]
+    if not text_parts:
+        raise ValueError("Assistant message has no text content")
+
+    raw = text_parts[0].text.value.strip()
+
+    # JSON 파싱 후 반환 (여기서 반드시 dict를 return)
+    try:
+        data = json.loads(raw)
+    except Exception as e:
+        print("🛠️ [DEBUG] raw from assistant:\n", raw)
+        raise ValueError(f"JSON 파싱 실패: {e}")
+
+    return data

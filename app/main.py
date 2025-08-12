@@ -6,7 +6,7 @@ from mangum import Mangum
 import logging
 
 app = FastAPI()
-logger = logging.getLogger("uvicorn.access")
+logger = logging.getLogger("app.logger")
 
 @app.middleware("http")
 async def log_path(request: Request, call_next):
