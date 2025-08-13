@@ -202,38 +202,70 @@ def create_content(
 
 
 def chat_body_assistant(question: str, answer: str):
+    schema = {
+        "type": "object",
+        "properties": {
+            "isSuccess": {"type": "boolean"},
+            "selected": {"type": ["string", "null"]},
+            "message": {"type": "string"},
+            "nextQuestion": {"type": ["string", "null"]},
+        },
+        # ← 키는 모두 존재해야 함(값은 string 또는 null 허용)
+        "required": ["isSuccess", "selected", "message", "nextQuestion"],
+        "additionalProperties": False,
+    }
+
     prompt = (
         f"{question}에 대한 응답입니다.\n"
         f"- 응답: {answer}\n"
+        "응답을 위 JSON 형식에 맞춰서만 반환하세요."
     )
 
     run = client.beta.threads.create_and_run(
         assistant_id=CHAT_ASSISTANT_ID,
-        thread={"messages": [{"role": "user", "content": prompt}]}
-
+        thread={"messages": [{"role": "user", "content": prompt}]},
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "BodyQuestionAnswer",
+                "strict": True,  # ← 엄격 모드 유지
+                "schema": schema,
+            },
+        },
     )
 
     thread_id = run.thread_id
     run_id = run.id
 
     while True:
-        status = client.beta.threads.runs.retrieve(
-            thread_id=thread_id,
-            run_id=run_id
-        )
+        status = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
         if status.status == "completed":
             break
         time.sleep(0.3)
 
     msgs = client.beta.threads.messages.list(thread_id=thread_id).data
-    raw = msgs[0].content[0].text.value  # 어시스턴트가 첫 번째 메시지로 보낸 응답
+    assistant_msg = next((m for m in msgs if getattr(m, "role", "") == "assistant"), None)
+    if assistant_msg is None:
+        raise ValueError("No assistant message found")
 
-    try:
-        return _extract_json(raw)
-    except Exception as e:
-        # 파싱 실패 시 디버그 로그와 함께 예외 올리기
-        print("🛠️ [DEBUG] raw from assistant:\n", raw)
-        raise ValueError(f"JSON 파싱 실패: {e}")
+    parts = [p for p in getattr(assistant_msg, "content", []) if getattr(p, "type", "") == "text"]
+    if not parts:
+        raise ValueError("Assistant message has no text content")
+
+    text_obj = parts[0].text
+    raw = (text_obj.value if hasattr(text_obj, "value") else str(text_obj)).strip()
+
+    data = json.loads(raw)
+
+    # (선택) 서버에서 일관 포맷으로 정규화: null -> ""
+    #  - FastAPI response_model이 selected/nextQuestion를 str로 요구한다면 필수
+    #  - optional로 둘 거면 이 블록은 생략해도 됨
+    if data.get("selected") is None:
+        data["selected"] = ""
+    if data.get("nextQuestion") is None:
+        data["nextQuestion"] = ""
+
+    return data
 
 
 def chat_body_result(
