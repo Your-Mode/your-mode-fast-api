@@ -50,7 +50,7 @@ def chat(request: ChatRequest):
 #         gender=request.gender,
 #     )
 
-@router.post("/assistant/body-result")
+@router.post("/body-result")
 def post_body_result(request: DiagnoseRequest):
     try:
         out = chat_body_result_soft(
@@ -70,7 +70,7 @@ def post_body_result(request: DiagnoseRequest):
     return JSONResponse(status_code=202, content=out)
 
 # --- 폴링: 상태 조회 ---
-@router.get("/assistant/run-status")
+@router.get("/run-status")
 def run_status(thread_id: str, run_id: str):
     try:
         return get_run_status(thread_id, run_id)
@@ -78,7 +78,7 @@ def run_status(thread_id: str, run_id: str):
         raise HTTPException(502, f"assistants status error: {e}")
 
 # --- 폴링: 결과 조회 ---
-@router.get("/assistant/run-result", response_model=DiagnoseResponse)
+@router.get("/run-result", response_model=DiagnoseResponse)
 def run_result(thread_id: str, run_id: str):
     try:
         data = get_run_result(thread_id, run_id)
