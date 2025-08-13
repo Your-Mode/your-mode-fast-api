@@ -3,7 +3,7 @@ import json
 import time
 import os
 from openai import OpenAI
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 if os.getenv("AWS_LAMBDA_FUNCTION_NAME") is None:
     from dotenv import load_dotenv
@@ -12,10 +12,10 @@ if os.getenv("AWS_LAMBDA_FUNCTION_NAME") is None:
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# 여러분이 생성해 둔 Assistant ID
 BODY_ASSISTANT_ID = os.getenv("OPENAI_BODY_ASSISTANT_ID")
 STYLE_ASSISTANT_ID = os.getenv("OPENAI_STYLE_ASSISTANT_ID")
 CHAT_ASSISTANT_ID = os.getenv("OPENAI_CHAT_ASSISTANT_ID")
+SOFT_WAIT_SEC = 25  # API GW(29~30s)보다 짧게
 
 
 def _extract_json(raw: str) -> dict:
@@ -74,6 +74,53 @@ def _build_prompt(answers: list[str], height: float, weight: float, gender: str)
         + "\n".join(f"{i+1}. {a}" for i, a in enumerate(answers))
         + "\n\n주의: 코드블록 없이 순수 JSON만 출력하세요."
     )
+
+# ---------- 안전한 메시지 텍스트 추출기 ----------
+def _as_dict(obj):
+    try:
+        if hasattr(obj, "model_dump"):
+            return obj.model_dump()
+        if hasattr(obj, "dict"):
+            return obj.dict()
+    except Exception:
+        pass
+    return obj if isinstance(obj, dict) else json.loads(json.dumps(obj, default=str))
+
+def _extract_first_text_from_content_items(items):
+    for item in items or []:
+        d = _as_dict(item)
+        itype = d.get("type")
+
+        # 중첩 content(tool_result 등)
+        if isinstance(d.get("content"), list):
+            inner = _extract_first_text_from_content_items(d["content"])
+            if inner:
+                return inner
+
+        if itype in ("output_text", "text", "input_text"):
+            t = d.get("text")
+            if isinstance(t, str):
+                return t
+            if isinstance(t, dict) and isinstance(t.get("value"), str):
+                return t["value"]
+
+        for key in ("output_text", "value"):
+            if isinstance(d.get(key), str):
+                return d[key]
+    return None
+
+def _extract_first_text_from_message(msg):
+    m = _as_dict(msg)
+    for key in ("text", "output_text"):
+        v = m.get(key)
+        if isinstance(v, str):
+            return v
+        if isinstance(v, dict) and isinstance(v.get("value"), str):
+            return v["value"]
+    content = m.get("content") or []
+    if isinstance(content, list):
+        return _extract_first_text_from_content_items(content)
+    return None
 
 def diagnose_body_type_with_assistant(
     answers: list[str],
@@ -363,3 +410,100 @@ def chat_body_result(
         raise ValueError(f"JSON 파싱 실패: {e}")
 
     return data
+
+def chat_body_result_soft(
+    answers: list[str],
+    height: float,
+    weight: float,
+    gender: str,
+) -> Dict[str, Any]:
+    """
+    1) 최대 SOFT_WAIT_SEC 동안만 동기 대기
+    2) 완료되면 결과 JSON(dict) 반환
+    3) 미완료면 {"thread_id","run_id","status"} 반환(컨트롤러에서 202로 내려주기)
+    """
+    prompt = _build_prompt(answers, height, weight, gender)
+
+    run = client.beta.threads.create_and_run(
+        assistant_id=BODY_ASSISTANT_ID,
+        thread={"messages": [{"role": "user", "content": prompt}]},
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "BodyDiagnosisResult",
+                "strict": True,
+                "schema": RESULT_SCHEMA,
+            },
+        },
+    )
+
+    thread_id = run.thread_id
+    run_id = run.id
+
+    # 소프트 대기
+    deadline = time.time() + SOFT_WAIT_SEC
+    status = run.status
+    while time.time() < deadline:
+        st = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
+        status = st.status
+        if status == "completed":
+            break
+        if status in {"failed", "cancelled", "expired"}:
+            last_err = getattr(st, "last_error", None)
+            raise RuntimeError(f"assistants run {status}: {last_err}")
+        time.sleep(0.3)
+
+    if status == "completed":
+        # 결과 바로 파싱해서 반환
+        msgs = client.beta.threads.messages.list(thread_id=thread_id, order="desc", limit=20).data
+        raw: Optional[str] = None
+        for m in msgs:
+            if getattr(m, "role", "") != "assistant":
+                continue
+            raw = _extract_first_text_from_message(m)
+            if raw:
+                break
+        if not raw:
+            raise RuntimeError("assistant message has no extractable text")
+
+        data = json.loads(raw.strip())
+
+        # 필드 정규화(혹시 None/누락 방어)
+        for k in ("body_type","type_description","detailed_features","attraction_points",
+                  "recommended_styles","avoid_styles","styling_fixes","styling_tips"):
+            if data.get(k) is None:
+                data[k] = ""
+        return data
+
+    # 미완료면 run 식별자 반환 (컨트롤러가 202로 내려줌)
+    return {"thread_id": thread_id, "run_id": run_id, "status": status}
+
+def get_run_status(thread_id: str, run_id: str) -> Dict[str, Any]:
+    st = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
+    return {"status": st.status, "last_error": getattr(st, "last_error", None)}
+
+def get_run_result(thread_id: str, run_id: str) -> Dict[str, Any]:
+    st = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
+    if st.status != "completed":
+        # 컨트롤러에서 425로 매핑하기 좋게 상태만 던짐
+        return {"status": st.status}
+
+    msgs = client.beta.threads.messages.list(thread_id=thread_id, order="desc", limit=20).data
+    raw: Optional[str] = None
+    for m in msgs:
+        if getattr(m, "role", "") != "assistant":
+            continue
+        raw = _extract_first_text_from_message(m)
+        if raw:
+            break
+    if not raw:
+        raise RuntimeError("assistant message has no extractable text")
+
+    data = json.loads(raw.strip())
+    for k in ("body_type","type_description","detailed_features","attraction_points",
+              "recommended_styles","avoid_styles","styling_fixes","styling_tips"):
+        if data.get(k) is None:
+            data[k] = ""
+    data["status"] = "completed"
+    return data
+

@@ -1,10 +1,11 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.schemas.diagnosis import DiagnoseRequest, DiagnoseResponse
 from app.schemas.content import CreateContentRequest
 from app.services.assistant_service import diagnose_body_type_with_assistant, create_content, chat_body_assistant, \
-    chat_body_result
+    chat_body_result, chat_body_result_soft, get_run_status, get_run_result
 
 router = APIRouter()
 
@@ -40,11 +41,54 @@ def chat(request: ChatRequest):
     return chat_body_assistant(request.question, request.answer)
 
 
-@router.post("/body-result", response_model=DiagnoseResponse)
+# @router.post("/body-result", response_model=DiagnoseResponse)
+# def post_body_result(request: DiagnoseRequest):
+#     return chat_body_result(
+#         answers=request.answers,
+#         height=request.height,
+#         weight=request.weight,
+#         gender=request.gender,
+#     )
+
+@router.post("/assistant/body-result")
 def post_body_result(request: DiagnoseRequest):
-    return chat_body_result(
-        answers=request.answers,
-        height=request.height,
-        weight=request.weight,
-        gender=request.gender,
-    )
+    try:
+        out = chat_body_result_soft(
+            answers=request.answers,
+            height=request.height,
+            weight=request.weight,
+            gender=request.gender,
+        )
+    except Exception as e:
+        raise HTTPException(502, f"assistants error: {e}")
+
+    # 완료면 dict(결과) → 200
+    if "thread_id" not in out:
+        return out  # DiagnoseResponse 스키마와 매칭됨
+
+    # 미완료면 202로 run 식별자 반환
+    return JSONResponse(status_code=202, content=out)
+
+# --- 폴링: 상태 조회 ---
+@router.get("/assistant/run-status")
+def run_status(thread_id: str, run_id: str):
+    try:
+        return get_run_status(thread_id, run_id)
+    except Exception as e:
+        raise HTTPException(502, f"assistants status error: {e}")
+
+# --- 폴링: 결과 조회 ---
+@router.get("/assistant/run-result", response_model=DiagnoseResponse)
+def run_result(thread_id: str, run_id: str):
+    try:
+        data = get_run_result(thread_id, run_id)
+    except Exception as e:
+        raise HTTPException(502, f"assistants result error: {e}")
+
+    if data.get("status") != "completed":
+        # 아직 준비 안 됨
+        raise HTTPException(425, f"run not completed: {data.get('status')}")
+
+    # completed이면 DiagnoseResponse 스키마로 반환
+    data.pop("status", None)
+    return data
