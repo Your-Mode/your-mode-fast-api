@@ -53,7 +53,7 @@ def chat(request: ChatRequest):
 @router.post("/body-result")
 def post_body_result(request: DiagnoseRequest):
     try:
-        out = chat_body_result_soft(
+        out = chat_body_result(
             answers=request.answers,
             height=request.height,
             weight=request.weight,
