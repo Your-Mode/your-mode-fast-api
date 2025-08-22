@@ -1,0 +1,90 @@
+[project]
+name = "your-mode-fast-api"
+version = "0.1.0"
+description = "FastAPI application for your mode"
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi~=0.115.13",
+    "openai~=1.88.0",
+    "pydantic~=2.11.7",
+    "mangum~=0.19.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "uvicorn~=0.23.2",
+    "python-dotenv~=1.1.0",
+    "ruff~=0.3.0",
+    "pytest~=8.0.0",
+]
+
+# [build-system]
+# requires = ["hatchling"]
+# build-backend = "hatchling.build"
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# [tool.hatch.build.targets.wheel]
+# packages = ["app"]
+[tool.setuptools.packages.find]
+include = ["app*", "chatbot*", "backend*"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint.per-file-ignores]
+"*.ipynb" = ["E501"]
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "F",   # pyflakes
+  "I",   # isort
+  "N",   # pep-naming
+  "B",   # flake8-bugbear
+  "ANN", # flake8-annotations
+  "A",   # flake8-builtins
+  "Q",   # flake8-quotes
+  "COM", # flake8-commas
+  "T10", # flake8-debugger
+  "TID", # flake8-tidy-imports
+  "SIM", # flake8-simplify
+  "ARG", # flake8-unused-arguments
+  "LOG", # flake8-logging
+  "PLC", # pylint-convention
+  "PLE", # pylint-errors
+  "UP",  # pyupgrade
+  "NPY", # numpy
+  "PD",  # pandas
+]
+extend-safe-fixes = [
+  "ANN204",  # Missing return type annotation for special method __init__
+  "SIM118",  # Use `key in dict` instead of `key in dict.keys()`
+]
+ignore = [
+  "B905",    # zip() without an explicit strict= parameter
+  "E741",    # Ambiguous variable name
+  "ANN002",  # Missing type annotation for *{name}
+  "ANN003",  # Missing type annotation for **{name}
+  "ANN201",  # Missing return type annotation for public function
+  "ANN202",  # Missing return type annotation for private function
+  "ANN401",  # Dynamically typed expressions (typing.Any) are disallowed in {name}
+  "ARG002",  # Unused method argument: {name}
+  "B009",    # Do not call getattr with a constant attribute value.
+  "B028",    # No explicit stacklevel keyword argument found
+  "COM812",  # Missing trailing comma in a list (Ignored because of conflict with formatting)
+  "N802",    # Function name {name} should be lowercase
+  "N803",    # Argument name {name} should be lowercase
+  "N806",    # Variable {name} in function should be lowercase
+  "N812",    # Lowercase {name} imported as non-lowercase {asname}
+]
+
+# docstring 포맷
+[tool.ruff.format]
+docstring-code-format = true

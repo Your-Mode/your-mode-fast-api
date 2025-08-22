@@ -1,11 +1,11 @@
-from typing import List
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
 
 class DiagnoseRequest(BaseModel):
-    answers: List[str] = Field(..., description="설문 응답 리스트")
-    height: float      = Field(..., description="키 (cm)")
-    weight: float      = Field(..., description="체중 (kg)")
-    gender: str        = Field(..., description="성별")
+    answers: list[str] = Field(..., description="설문 응답 리스트")
+    height: float = Field(..., description="키 (cm)")
+    weight: float = Field(..., description="체중 (kg)")
+    gender: str = Field(..., description="성별")
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -27,11 +27,11 @@ class DiagnoseRequest(BaseModel):
                     "쇄골이 거의 보이지 않는다",
                     "둥근 얼굴이며, 볼이 통통한 편이다",
                     "상체가 발달한 느낌이며 허리가 짧고 탄탄한 인상을 준다",
-                    "팔, 가슴, 배 등 상체 위주로 찐다"
+                    "팔, 가슴, 배 등 상체 위주로 찐다",
                 ],
                 "height": 164.5,
                 "weight": 55.2,
-                "gender": "여성"
+                "gender": "여성",
             }
         }
     )
@@ -57,6 +57,6 @@ class DiagnoseResponse(BaseModel):
                 "recommended_styles": "...",
                 "avoid_styles": "...",
                 "styling_fixes": "...",
-                "styling_tips": "..."
+                "styling_tips": "...",
             }
         }

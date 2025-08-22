@@ -1,8 +1,8 @@
-from pydantic import Field, BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ChatRequest(BaseModel):
-    question: str = Field(..., description="질문"),
+    question: str = (Field(..., description="질문"),)
     answer: str = Field(..., description="응답")
 
     model_config = ConfigDict(
@@ -16,17 +16,17 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    isSuccess: bool
+    is_success: bool
     selected: str
     message: str
-    nextQuestion: str
+    next_question: str
 
     class Config:
         schema_extra = {
             "example": {
-                "isSuccess": "스트레이트",
+                "is_success": "스트레이트",
                 "selected": "어깨와 엉덩이 폭이 비슷한...",
                 "message": "...",
-                "nextQuestion": "...",
+                "next_question": "...",
             }
         }

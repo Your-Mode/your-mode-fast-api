@@ -1,4 +1,4 @@
-from pydantic import Field, BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CreateContentRequest(BaseModel):
@@ -25,7 +25,7 @@ class CreateContentRequest(BaseModel):
                 "recommended_situation": "IR발표",
                 "recommended_style": "IR 발표에 어울리는 스타일",
                 "avoid_style": "스트릿,힙한 스타일",
-                "budget": "20만원"
+                "budget": "20만원",
             }
         }
     )

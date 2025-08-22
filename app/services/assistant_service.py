@@ -1,9 +1,11 @@
-import re
+import contextlib
 import json
-import time
 import os
+import re
+import time
+from typing import Any, Optional
+
 from openai import OpenAI
-from typing import Any, Dict, Optional
 
 if os.getenv("AWS_LAMBDA_FUNCTION_NAME") is None:
     from dotenv import load_dotenv
@@ -30,7 +32,12 @@ def _extract_json(raw: str) -> dict:
     m = re.search(r"```json\s*(\{.*?\})\s*```", raw, re.DOTALL)
     json_str = m.group(1) if m else raw
     # 2) 불필요한 ``` 제거 (혹시 raw에만 있을 때)
-    json_str = json_str.strip().lstrip("```").rstrip("```").strip()
+    json_str = json_str.strip()
+    if json_str.startswith("```"):
+        json_str = json_str[3:]
+    if json_str.endswith("```"):
+        json_str = json_str[:-3]
+    json_str = json_str.strip()
     # 3) 파싱
     return json.loads(json_str, strict=False)
 
@@ -60,13 +67,16 @@ RESULT_SCHEMA = {
     "additionalProperties": False,
 }
 
+
 def _build_prompt(answers: list[str], height: float, weight: float, gender: str) -> str:
     return (
         "당신은 골격 진단 및 패션 스타일리스트입니다.\n"
         "아래 사용자 정보를 바탕으로 체형을 진단하고, 반드시 JSON으로만 응답하세요.\n"
-        "출력은 다음 스키마의 각 필드를 한국어로 충실히 채우세요. 모든 값은 문자열입니다.\n"
-        "필드: body_type, type_description, detailed_features, attraction_points, "
-        "recommended_styles, avoid_styles, styling_fixes, styling_tips\n\n"
+        "출력은 다음 스키마의 각 필드를 한국어로 충실히 채우세요. "
+        "모든 값은 문자열입니다.\n"
+        "필드: body_type, type_description, detailed_features, "
+        "attraction_points, recommended_styles, avoid_styles, "
+        "styling_fixes, styling_tips\n\n"
         f"- 성별: {gender}\n"
         f"- 키: {height}cm\n"
         f"- 체중: {weight}kg\n"
@@ -75,8 +85,9 @@ def _build_prompt(answers: list[str], height: float, weight: float, gender: str)
         + "\n\n주의: 코드블록 없이 순수 JSON만 출력하세요."
     )
 
+
 # ---------- 안전한 메시지 텍스트 추출기 ----------
-def _as_dict(obj):
+def _as_dict(obj: any) -> dict:
     try:
         if hasattr(obj, "model_dump"):
             return obj.model_dump()
@@ -86,7 +97,8 @@ def _as_dict(obj):
         pass
     return obj if isinstance(obj, dict) else json.loads(json.dumps(obj, default=str))
 
-def _extract_first_text_from_content_items(items):
+
+def _extract_first_text_from_content_items(items: list) -> str | None:
     for item in items or []:
         d = _as_dict(item)
         itype = d.get("type")
@@ -109,7 +121,8 @@ def _extract_first_text_from_content_items(items):
                 return d[key]
     return None
 
-def _extract_first_text_from_message(msg):
+
+def _extract_first_text_from_message(msg: any) -> str | None:
     m = _as_dict(msg)
     for key in ("text", "output_text"):
         v = m.get(key)
@@ -122,6 +135,7 @@ def _extract_first_text_from_message(msg):
         return _extract_first_text_from_content_items(content)
     return None
 
+
 def diagnose_body_type_with_assistant(
     answers: list[str],
     height: float,
@@ -129,7 +143,7 @@ def diagnose_body_type_with_assistant(
     gender: str,
     *,
     timeout_sec: int = 60,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     1) 사용자 정보로 prompt 구성
     2) create_and_run 으로 assistant 호출 (JSON 스키마 강제)
@@ -177,15 +191,14 @@ def diagnose_body_type_with_assistant(
         raise ValueError("No assistant message found")
 
     # created_at이 있다면 최신 정렬, 없다면 그대로 첫 번째 사용
-    try:
+    with contextlib.suppress(Exception):
         assistant_msgs.sort(key=lambda m: getattr(m, "created_at", 0), reverse=True)
-    except Exception:
-        pass
 
     first = assistant_msgs[0]
     if not first.content or getattr(first.content[0], "type", "text") != "text":
         # 도구 호출 등 다른 타입이 섞였을 가능성 방어
-        raise ValueError(f"Unexpected message content type: {getattr(first.content[0], 'type', 'unknown')}")
+        content_type = getattr(first.content[0], "type", "unknown")
+        raise ValueError(f"Unexpected message content type: {content_type}")
 
     raw = first.content[0].text.value.strip()
 
@@ -194,22 +207,24 @@ def diagnose_body_type_with_assistant(
         return json.loads(raw)
     except Exception as e:
         print("🛠️ [DEBUG] raw from assistant:\n", raw)
-        raise ValueError(f"JSON 파싱 실패: {e}")
+        raise ValueError(f"JSON 파싱 실패: {e}") from e
 
 
 def create_content(
-        name: str,
-        body_type: str,
-        height: int,
-        weight: int,
-        body_feature: str,
-        recommendation_items: list[str],
-        recommended_situation: str,
-        recommended_style: str,
-        avoid_style: str,
-        budget: str,
+    name: str,
+    body_type: str,
+    height: int,
+    weight: int,
+    body_feature: str,
+    recommendation_items: list[str],
+    recommended_situation: str,
+    recommended_style: str,
+    avoid_style: str,
+    budget: str,
 ):
-    items_section = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(recommendation_items))
+    items_section = "\n".join(
+        f"{i + 1}. {item}" for i, item in enumerate(recommendation_items)
+    )
     prompt = (
         "다음 정보를 바탕으로 **스타일 추천 콘텐츠 초안**을 작성해줘.\n\n"
         f"- 이름: {name}\n"
@@ -228,16 +243,13 @@ def create_content(
 
     run = client.beta.threads.create_and_run(
         assistant_id=STYLE_ASSISTANT_ID,
-        thread={"messages": [{"role": "user", "content": prompt}]}
+        thread={"messages": [{"role": "user", "content": prompt}]},
     )
     thread_id = run.thread_id
     run_id = run.id
 
     while True:
-        status = client.beta.threads.runs.retrieve(
-            thread_id=thread_id,
-            run_id=run_id
-        )
+        status = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
         if status.status == "completed":
             break
         time.sleep(0.3)
@@ -291,11 +303,17 @@ def chat_body_assistant(question: str, answer: str):
         time.sleep(0.3)
 
     msgs = client.beta.threads.messages.list(thread_id=thread_id).data
-    assistant_msg = next((m for m in msgs if getattr(m, "role", "") == "assistant"), None)
+    assistant_msg = next(
+        (m for m in msgs if getattr(m, "role", "") == "assistant"), None
+    )
     if assistant_msg is None:
         raise ValueError("No assistant message found")
 
-    parts = [p for p in getattr(assistant_msg, "content", []) if getattr(p, "type", "") == "text"]
+    parts = [
+        p
+        for p in getattr(assistant_msg, "content", [])
+        if getattr(p, "type", "") == "text"
+    ]
     if not parts:
         raise ValueError("Assistant message has no text content")
 
@@ -315,12 +333,7 @@ def chat_body_assistant(question: str, answer: str):
     return data
 
 
-def chat_body_result(
-        answers: list[str],
-        height: float,
-        weight: float,
-        gender: str
-):
+def chat_body_result(answers: list[str], height: float, weight: float, gender: str):
     schema = {
         "type": "object",
         "properties": {
@@ -331,7 +344,7 @@ def chat_body_result(
             "recommended_styles": {"type": "string"},
             "avoid_styles": {"type": "string"},
             "styling_fixes": {"type": "string"},
-            "styling_tips": {"type": "string"}
+            "styling_tips": {"type": "string"},
         },
         "required": [
             "body_type",
@@ -341,20 +354,20 @@ def chat_body_result(
             "recommended_styles",
             "avoid_styles",
             "styling_fixes",
-            "styling_tips"
+            "styling_tips",
         ],
-        "additionalProperties": False
+        "additionalProperties": False,
     }
 
     prompt = (
-            f"다음 응답 내용을 바탕으로 골격 진단 결과를 알려줘\n"
-            f"- 성별: {gender}\n"
-            f"- 키: {height}cm\n"
-            f"- 체중: {weight}kg\n"
-            f"- 설문 응답:\n"
-            + "\n".join(f"{i + 1}. {a}" for i, a in enumerate(answers))
-            + "\n\n"
-              "체형 진단"
+        f"다음 응답 내용을 바탕으로 골격 진단 결과를 알려줘\n"
+        f"- 성별: {gender}\n"
+        f"- 키: {height}cm\n"
+        f"- 체중: {weight}kg\n"
+        f"- 설문 응답:\n"
+        + "\n".join(f"{i + 1}. {a}" for i, a in enumerate(answers))
+        + "\n\n"
+        "체형 진단"
     )
 
     run = client.beta.threads.create_and_run(
@@ -365,8 +378,8 @@ def chat_body_result(
             "json_schema": {
                 "name": "BodyDiagnosisResult",
                 "strict": True,
-                "schema": schema
-            }
+                "schema": schema,
+            },
         },
     )
 
@@ -380,8 +393,10 @@ def chat_body_result(
         if status.status == "completed":
             break
         if status.status in {"failed", "cancelled", "expired"}:
+            last_error = getattr(status, "last_error", None)
             raise RuntimeError(
-                f"Run ended with status={status.status}, last_error={getattr(status, 'last_error', None)}")
+                f"Run ended with status={status.status}, last_error={last_error}"
+            )
         if time.time() > deadline:
             raise TimeoutError("Assistants run timed out")
         time.sleep(0.3)
@@ -396,7 +411,9 @@ def chat_body_result(
     msg = assistant_msgs[0]
 
     # content 에서 text 파트만 안전하게 추출
-    text_parts = [p for p in getattr(msg, "content", []) if getattr(p, "type", "") == "text"]
+    text_parts = [
+        p for p in getattr(msg, "content", []) if getattr(p, "type", "") == "text"
+    ]
     if not text_parts:
         raise ValueError("Assistant message has no text content")
 
@@ -407,16 +424,17 @@ def chat_body_result(
         data = json.loads(raw)
     except Exception as e:
         print("🛠️ [DEBUG] raw from assistant:\n", raw)
-        raise ValueError(f"JSON 파싱 실패: {e}")
+        raise ValueError(f"JSON 파싱 실패: {e}") from e
 
     return data
+
 
 def chat_body_result_soft(
     answers: list[str],
     height: float,
     weight: float,
     gender: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     1) 최대 SOFT_WAIT_SEC 동안만 동기 대기
     2) 완료되면 결과 JSON(dict) 반환
@@ -455,7 +473,9 @@ def chat_body_result_soft(
 
     if status == "completed":
         # 결과 바로 파싱해서 반환
-        msgs = client.beta.threads.messages.list(thread_id=thread_id, order="desc", limit=20).data
+        msgs = client.beta.threads.messages.list(
+            thread_id=thread_id, order="desc", limit=20
+        ).data
         raw: Optional[str] = None
         for m in msgs:
             if getattr(m, "role", "") != "assistant":
@@ -469,8 +489,16 @@ def chat_body_result_soft(
         data = json.loads(raw.strip())
 
         # 필드 정규화(혹시 None/누락 방어)
-        for k in ("body_type","type_description","detailed_features","attraction_points",
-                  "recommended_styles","avoid_styles","styling_fixes","styling_tips"):
+        for k in (
+            "body_type",
+            "type_description",
+            "detailed_features",
+            "attraction_points",
+            "recommended_styles",
+            "avoid_styles",
+            "styling_fixes",
+            "styling_tips",
+        ):
             if data.get(k) is None:
                 data[k] = ""
         return data
@@ -478,17 +506,21 @@ def chat_body_result_soft(
     # 미완료면 run 식별자 반환 (컨트롤러가 202로 내려줌)
     return {"thread_id": thread_id, "run_id": run_id, "status": status}
 
-def get_run_status(thread_id: str, run_id: str) -> Dict[str, Any]:
+
+def get_run_status(thread_id: str, run_id: str) -> dict[str, Any]:
     st = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
     return {"status": st.status, "last_error": getattr(st, "last_error", None)}
 
-def get_run_result(thread_id: str, run_id: str) -> Dict[str, Any]:
+
+def get_run_result(thread_id: str, run_id: str) -> dict[str, Any]:
     st = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
     if st.status != "completed":
         # 컨트롤러에서 425로 매핑하기 좋게 상태만 던짐
         return {"status": st.status}
 
-    msgs = client.beta.threads.messages.list(thread_id=thread_id, order="desc", limit=20).data
+    msgs = client.beta.threads.messages.list(
+        thread_id=thread_id, order="desc", limit=20
+    ).data
     raw: Optional[str] = None
     for m in msgs:
         if getattr(m, "role", "") != "assistant":
@@ -500,10 +532,17 @@ def get_run_result(thread_id: str, run_id: str) -> Dict[str, Any]:
         raise RuntimeError("assistant message has no extractable text")
 
     data = json.loads(raw.strip())
-    for k in ("body_type","type_description","detailed_features","attraction_points",
-              "recommended_styles","avoid_styles","styling_fixes","styling_tips"):
+    for k in (
+        "body_type",
+        "type_description",
+        "detailed_features",
+        "attraction_points",
+        "recommended_styles",
+        "avoid_styles",
+        "styling_fixes",
+        "styling_tips",
+    ):
         if data.get(k) is None:
             data[k] = ""
     data["status"] = "completed"
     return data
-

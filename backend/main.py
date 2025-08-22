@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 from starlette.types import ASGIApp
 
-from app.api.assistant import router as assistant_router
+from chatbot.assistant import router as chatbot_router
 
 app = FastAPI()
 logger = logging.getLogger("app.logger")
@@ -30,5 +30,14 @@ app.add_middleware(
     allow_headers=["*"],  # 모든 헤더 허용 (Content-Type 등)
 )
 
-app.include_router(assistant_router, prefix="/assistant")
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "service": "your-mode-backend"}
+
+
+# Include chatbot router
+app.include_router(chatbot_router, prefix="/chatbot")
+
 handler = Mangum(app, api_gateway_base_path="/prod")
