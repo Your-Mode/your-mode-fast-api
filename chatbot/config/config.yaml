@@ -1,0 +1,119 @@
+# Chatbot Configuration
+# 프롬프트와 모델 설정을 관리하는 설정 파일
+
+# OpenAI Assistant IDs
+assistants:
+  body_assistant_id: ${OPENAI_BODY_ASSISTANT_ID}
+  style_assistant_id: ${OPENAI_STYLE_ASSISTANT_ID}
+  chat_assistant_id: ${OPENAI_CHAT_ASSISTANT_ID}
+
+# Model Configuration
+models:
+  default_model: "gpt-4"
+  temperature: 0.7
+  max_tokens: 1000
+  timeout_seconds: 60
+  soft_wait_seconds: 25
+
+# Prompts
+prompts:
+  body_diagnosis:
+    system: |
+      당신은 골격 진단 및 패션 스타일리스트입니다.
+      사용자 정보를 바탕으로 체형을 진단하고, 반드시 JSON으로만 응답하세요.
+      출력은 다음 스키마의 각 필드를 한국어로 충실히 채우세요.
+      모든 값은 문자열입니다.
+
+      필드: body_type, type_description, detailed_features,
+      attraction_points, recommended_styles, avoid_styles,
+      styling_fixes, styling_tips
+
+      주의: 코드블록 없이 순수 JSON만 출력하세요.
+
+    user_template: |
+      - 성별: {gender}
+      - 키: {height}cm
+      - 체중: {weight}kg
+      - 설문 응답:
+      {answers_formatted}
+
+  style_content:
+    system: |
+      당신은 패션 스타일리스트입니다.
+      사용자 정보를 바탕으로 스타일 추천 콘텐츠를 작성해주세요.
+
+    user_template: |
+      다음 정보를 바탕으로 **스타일 추천 콘텐츠 초안**을 작성해줘.
+
+      - 이름: {name}
+      - 체형 타입: {body_type}
+      - 키: {height}cm
+      - 몸무게: {weight}kg
+      - 체형 특징: {body_feature}
+      - 추천 아이템:
+      {items_section}
+
+      - 입고 싶은 상황: {recommended_situation}
+      - 추천 스타일: {recommended_style}
+      - 피하고 싶은 스타일: {avoid_style}
+      - 예산: {budget}
+
+      ↳ 초안 작성.
+
+  chat_assistant:
+    system: |
+      당신은 체형 진단을 위한 질문-답변 어시스턴트입니다.
+      사용자의 응답을 분석하고 다음 질문을 제시해주세요.
+
+    user_template: |
+      {question}에 대한 응답입니다.
+      - 응답: {answer}
+      응답을 위 JSON 형식에 맞춰서만 반환하세요.
+
+# JSON Schemas
+json_schemas:
+  body_diagnosis:
+    name: "BodyDiagnosisResult"
+    strict: true
+    schema:
+      type: "object"
+      properties:
+        body_type: {"type": "string"}
+        type_description: {"type": "string"}
+        detailed_features: {"type": "string"}
+        attraction_points: {"type": "string"}
+        recommended_styles: {"type": "string"}
+        avoid_styles: {"type": "string"}
+        styling_fixes: {"type": "string"}
+        styling_tips: {"type": "string"}
+      required:
+        - body_type
+        - type_description
+        - detailed_features
+        - attraction_points
+        - recommended_styles
+        - avoid_styles
+        - styling_fixes
+        - styling_tips
+      additionalProperties: false
+
+  chat_response:
+    name: "BodyQuestionAnswer"
+    strict: true
+    schema:
+      type: "object"
+      properties:
+        isSuccess: {"type": "boolean"}
+        selected: {"type": ["string", "null"]}
+        message: {"type": "string"}
+        nextQuestion: {"type": ["string", "null"]}
+      required: ["isSuccess", "selected", "message", "nextQuestion"]
+      additionalProperties: false
+
+# Error Messages
+error_messages:
+  no_assistant_message: "No assistant message found"
+  no_text_content: "Assistant message has no text content"
+  json_parsing_failed: "JSON 파싱 실패: {error}"
+  run_timeout: "Assistants run timed out"
+  run_failed: "Assistants run ended with status={status}, last_error={error}"
