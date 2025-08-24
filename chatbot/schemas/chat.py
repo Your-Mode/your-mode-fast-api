@@ -1,25 +1,24 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class ChatRequest(BaseModel):
-    question: str = (Field(..., description="질문"),)
-    answer: str = Field(..., description="응답")
+    question: str = Field(..., description="Question")
+    answer: str = Field(..., description="Answer")
 
-    model_config = ConfigDict(
-        json_schema_extra={
+    class Config:
+        json_schema_extra = {
             "example": {
                 "question": "1. 전체적인 골격의 인상은 어떠한가요?",
                 "answer": "두께감이 있고, 육감적입니다.",
             }
         }
-    )
 
 
 class ChatResponse(BaseModel):
-    is_success: bool
-    selected: str
-    message: str
-    next_question: str
+    is_success: bool = Field(..., description="Success status")
+    selected: str = Field(..., description="Selected option")
+    message: str = Field(..., description="Response message")
+    next_question: str = Field(..., description="Next question to ask")
 
     class Config:
         schema_extra = {

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 from starlette.types import ASGIApp
 
+from chatbot.api.conversation import router as conversation_router
 from chatbot.assistant import router as chatbot_router
 
 app = FastAPI()
@@ -39,5 +40,8 @@ async def health_check():
 
 # Include chatbot router
 app.include_router(chatbot_router, prefix="/chatbot")
+
+# Include conversation router
+app.include_router(conversation_router, prefix="/api")
 
 handler = Mangum(app, api_gateway_base_path="/prod")

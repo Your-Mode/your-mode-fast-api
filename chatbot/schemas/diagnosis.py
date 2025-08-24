@@ -1,14 +1,14 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class DiagnoseRequest(BaseModel):
-    answers: list[str] = Field(..., description="설문 응답 리스트")
-    height: float = Field(..., description="키 (cm)")
-    weight: float = Field(..., description="체중 (kg)")
-    gender: str = Field(..., description="성별")
+    answers: list[str] = Field(..., description="List of survey responses")
+    height: float = Field(..., description="Height in cm")
+    weight: float = Field(..., description="Weight in kg")
+    gender: str = Field(..., description="Gender")
 
-    model_config = ConfigDict(
-        json_schema_extra={
+    class Config:
+        json_schema_extra = {
             "example": {
                 "answers": [
                     "두께감이 있고 육감적이다",
@@ -34,18 +34,17 @@ class DiagnoseRequest(BaseModel):
                 "gender": "여성",
             }
         }
-    )
 
 
 class DiagnoseResponse(BaseModel):
-    body_type: str
-    type_description: str
-    detailed_features: str
-    attraction_points: str
-    recommended_styles: str
-    avoid_styles: str
-    styling_fixes: str
-    styling_tips: str
+    body_type: str = Field(..., description="Body type classification")
+    type_description: str = Field(..., description="Detailed description of body type")
+    detailed_features: str = Field(..., description="Specific body features and characteristics")
+    attraction_points: str = Field(..., description="Highlighted attractive features")
+    recommended_styles: str = Field(..., description="Recommended fashion styles")
+    avoid_styles: str = Field(..., description="Styles to avoid")
+    styling_fixes: str = Field(..., description="Styling tips and fixes")
+    styling_tips: str = Field(..., description="Additional styling advice")
 
     class Config:
         schema_extra = {

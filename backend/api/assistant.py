@@ -1,6 +1,3 @@
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse
-
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.schemas.content import CreateContentRequest
 from app.schemas.diagnosis import DiagnoseRequest, DiagnoseResponse
@@ -12,6 +9,8 @@ from app.services.assistant_service import (
     get_run_result,
     get_run_status,
 )
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 router = APIRouter()
 
@@ -42,9 +41,7 @@ def recommend_content(request: CreateContentRequest):
     )
 
 
-@router.post(
-    "/chat", description="체형 진단 개별 질문에 대한 응답", response_model=ChatResponse
-)
+@router.post("/chat", description="체형 진단 개별 질문에 대한 응답", response_model=ChatResponse)
 def chat(request: ChatRequest):
     return chat_body_assistant(request.question, request.answer)
 
