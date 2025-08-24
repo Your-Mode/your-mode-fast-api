@@ -72,3 +72,6 @@ uv.lock
 
 # Cython
 cython_debug/
+
+# Config files
+chatbot/config/
