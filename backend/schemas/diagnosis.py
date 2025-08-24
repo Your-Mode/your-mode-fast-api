@@ -1,14 +1,14 @@
-from typing import List
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field
+
 
 class DiagnoseRequest(BaseModel):
-    answers: List[str] = Field(..., description="설문 응답 리스트")
-    height: float      = Field(..., description="키 (cm)")
-    weight: float      = Field(..., description="체중 (kg)")
-    gender: str        = Field(..., description="성별")
+    answers: list[str] = Field(..., description="List of survey responses")
+    height: float = Field(..., description="Height in cm")
+    weight: float = Field(..., description="Weight in kg")
+    gender: str = Field(..., description="Gender")
 
-    model_config = ConfigDict(
-        json_schema_extra={
+    class Config:
+        json_schema_extra = {
             "example": {
                 "answers": [
                     "두께감이 있고 육감적이다",
@@ -27,25 +27,24 @@ class DiagnoseRequest(BaseModel):
                     "쇄골이 거의 보이지 않는다",
                     "둥근 얼굴이며, 볼이 통통한 편이다",
                     "상체가 발달한 느낌이며 허리가 짧고 탄탄한 인상을 준다",
-                    "팔, 가슴, 배 등 상체 위주로 찐다"
+                    "팔, 가슴, 배 등 상체 위주로 찐다",
                 ],
                 "height": 164.5,
                 "weight": 55.2,
-                "gender": "여성"
+                "gender": "여성",
             }
         }
-    )
 
 
 class DiagnoseResponse(BaseModel):
-    body_type: str
-    type_description: str
-    detailed_features: str
-    attraction_points: str
-    recommended_styles: str
-    avoid_styles: str
-    styling_fixes: str
-    styling_tips: str
+    body_type: str = Field(..., description="Body type classification")
+    type_description: str = Field(..., description="Detailed description of body type")
+    detailed_features: str = Field(..., description="Specific body features and characteristics")
+    attraction_points: str = Field(..., description="Highlighted attractive features")
+    recommended_styles: str = Field(..., description="Recommended fashion styles")
+    avoid_styles: str = Field(..., description="Styles to avoid")
+    styling_fixes: str = Field(..., description="Styling tips and fixes")
+    styling_tips: str = Field(..., description="Additional styling advice")
 
     class Config:
         schema_extra = {
@@ -57,6 +56,6 @@ class DiagnoseResponse(BaseModel):
                 "recommended_styles": "...",
                 "avoid_styles": "...",
                 "styling_fixes": "...",
-                "styling_tips": "..."
+                "styling_tips": "...",
             }
         }
