@@ -1,13 +1,17 @@
-name: Deploy FastAPI to Lambda
+name: Deploy FastAPI to Lambda (ALB)
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main, dev ]
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      FUNCTION_NAME: my-fastapi
+      # main → prod / dev → dev
+      ALIAS: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
 
     steps:
       - name: Checkout code
@@ -22,18 +26,19 @@ jobs:
       - name: Extract packages
         run: |
           CID=$(docker create fastapi-packager)
-          docker cp $CID:/layer.zip ./layer.zip
-          docker cp $CID:/function.zip ./function.zip
-          docker rm $CID
+          docker cp "$CID":/layer.zip ./layer.zip
+          docker cp "$CID":/function.zip ./function.zip
+          docker rm "$CID"
           ls -lh layer.zip function.zip
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
+      # ---- 레이어 배포 ----
       - id: publish_layer
         name: Publish new layer version
         run: |
@@ -45,28 +50,51 @@ jobs:
             --query 'LayerVersionArn' --output text)
           echo "layer_arn=$ARN" >> $GITHUB_OUTPUT
 
-      - name: Update Lambda configuration with layer
+      # ---- 함수 설정 업데이트 ----
+      - name: Update Lambda configuration
         run: |
           aws lambda update-function-configuration \
-            --function-name my-fastapi \
+            --function-name ${{ env.FUNCTION_NAME }} \
             --layers ${{ steps.publish_layer.outputs.layer_arn }} \
             --timeout 150 \
             --memory-size 512 \
-            --environment Variables="{OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }},OPENAI_BASE_URL=${{ secrets.OPENAI_BASE_URL }},OPENAI_BODY_ASSISTANT_ID=${{ secrets.OPENAI_BODY_ASSISTANT_ID }},OPENAI_STYLE_ASSISTANT_ID=${{ secrets.OPENAI_STYLE_ASSISTANT_ID }},OPENAI_CHAT_ASSISTANT_ID=${{ secrets.OPENAI_CHAT_ASSISTANT_ID }}}"
+            --environment "Variables={
+              OPENAI_API_KEY='${{ secrets.OPENAI_API_KEY }}',
+              OPENAI_BASE_URL='${{ secrets.OPENAI_BASE_URL }}',
+              OPENAI_BODY_ASSISTANT_ID='${{ secrets.OPENAI_BODY_ASSISTANT_ID }}',
+              OPENAI_STYLE_ASSISTANT_ID='${{ secrets.OPENAI_STYLE_ASSISTANT_ID }}',
+              OPENAI_CHAT_ASSISTANT_ID='${{ secrets.OPENAI_CHAT_ASSISTANT_ID }}'
+            }"
 
       - name: Wait for config update
-        run: aws lambda wait function-updated --function-name my-fastapi
+        run: aws lambda wait function-updated --function-name ${{ env.FUNCTION_NAME }}
 
+      # ---- 코드 배포 ----
       - name: Update Lambda function code
         run: |
           aws lambda update-function-code \
-            --function-name my-fastapi \
+            --function-name ${{ env.FUNCTION_NAME }} \
             --zip-file fileb://function.zip
 
-      - name: Deploy API Gateway stage
+      # ---- 새 버전 발행 ----
+      - id: publish_version
+        name: Publish function version
         run: |
-          API_ID=$(aws apigatewayv2 get-apis \
-            --query "Items[?Name=='yourmode-api-gateway'].ApiId" --output text)
-          aws apigatewayv2 create-deployment \
-            --api-id "$API_ID" \
-            --stage-name prod
+          VER=$(aws lambda publish-version --function-name ${{ env.FUNCTION_NAME }} --query Version --output text)
+          echo "version=$VER" >> $GITHUB_OUTPUT
+          echo "Published version: $VER"
+
+      # ---- alias 업데이트 ----
+      - name: Point alias to new version
+        run: |
+          set -e
+          ALIAS=${{ env.ALIAS }}
+          FN=${{ env.FUNCTION_NAME }}
+          VER=${{ steps.publish_version.outputs.version }}
+          if aws lambda get-alias --function-name "$FN" --name "$ALIAS" >/dev/null 2>&1; then
+            aws lambda update-alias --function-name "$FN" --name "$ALIAS" --function-version "$VER"
+          else
+            aws lambda create-alias --function-name "$FN" --name "$ALIAS" --function-version "$VER" \
+              --description "Alias for $ALIAS environment"
+          fi
+          echo "Alias '$ALIAS' -> version $VER"
