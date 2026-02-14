@@ -4,7 +4,7 @@ This document is a working guide for agents operating in the `/Users/minsu/Docum
 
 ## 1) Project Overview
 - This is a FastAPI-based backend service.
-- It uses the OpenAI Assistants API for body-type diagnosis, chat, and style content generation.
+- It uses the OpenAI Responses API for body-type diagnosis, chat, and style content generation.
 - The production deployment target is AWS Lambda, using `Mangum` to wrap ASGI.
 
 ## 2) Code Structure
@@ -21,9 +21,10 @@ This document is a working guide for agents operating in the `/Users/minsu/Docum
    - `pip install -r requirements-dev.txt`
 2. Configure environment variables (`.env`)
    - `OPENAI_API_KEY`
-   - `OPENAI_BODY_ASSISTANT_ID`
-   - `OPENAI_STYLE_ASSISTANT_ID`
-   - `OPENAI_CHAT_ASSISTANT_ID`
+   - `OPENAI_MODEL` (optional default model, fallback: `gpt-4.1-mini`)
+   - `OPENAI_BODY_MODEL` (optional)
+   - `OPENAI_STYLE_MODEL` (optional)
+   - `OPENAI_CHAT_MODEL` (optional)
 3. Start the server
    - `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
 

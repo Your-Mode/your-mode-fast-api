@@ -5,7 +5,7 @@ from app.schemas.chat import ChatRequest, ChatResponse
 from app.schemas.diagnosis import DiagnoseRequest, DiagnoseResponse
 from app.schemas.content import CreateContentRequest
 from app.services.assistant_service import diagnose_body_type_with_assistant, create_content, chat_body_assistant, \
-    chat_body_result, chat_body_result_soft, get_run_status, get_run_result
+    chat_body_result_soft, get_run_status, get_run_result
 
 router = APIRouter()
 
@@ -53,14 +53,14 @@ def chat(request: ChatRequest):
 @router.post("/body-result")
 def post_body_result(request: DiagnoseRequest):
     try:
-        out = chat_body_result(
+        out = chat_body_result_soft(
             answers=request.answers,
             height=request.height,
             weight=request.weight,
             gender=request.gender,
         )
     except Exception as e:
-        raise HTTPException(502, f"assistants error: {e}")
+        raise HTTPException(502, f"responses error: {e}")
 
     # 완료면 dict(결과) → 200
     if "thread_id" not in out:
@@ -75,7 +75,7 @@ def run_status(thread_id: str, run_id: str):
     try:
         return get_run_status(thread_id, run_id)
     except Exception as e:
-        raise HTTPException(502, f"assistants status error: {e}")
+        raise HTTPException(502, f"responses status error: {e}")
 
 # --- 폴링: 결과 조회 ---
 @router.get("/run-result", response_model=DiagnoseResponse)
@@ -83,7 +83,7 @@ def run_result(thread_id: str, run_id: str):
     try:
         data = get_run_result(thread_id, run_id)
     except Exception as e:
-        raise HTTPException(502, f"assistants result error: {e}")
+        raise HTTPException(502, f"responses result error: {e}")
 
     if data.get("status") != "completed":
         # 아직 준비 안 됨

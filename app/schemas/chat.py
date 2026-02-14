@@ -2,14 +2,14 @@ from pydantic import Field, BaseModel, ConfigDict
 
 
 class ChatRequest(BaseModel):
-    question: str = Field(..., description="질문"),
+    question: str = Field(..., description="질문")
     answer: str = Field(..., description="응답")
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "question": "1. 전체적인 골격의 인상은 어떠한가요?",
-                "answer": "두께감이 있고, 육감적입니다.",
+                "question": "1. 피부는 어떤 느낌인가요?",
+                "answer": "피부가 부드럽고 말랑말랑해요.",
             }
         }
     )
